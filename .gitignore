@@ -1,0 +1,15 @@
+Packages
+Package.resolved
+.build
+xcuserdata
+*.xcodeproj
+DerivedData/
+.DS_Store
+Pods/
+*.xcworkspace
+xcuserdata/
+xcschememanagement.plist
+sitemap.xml
+.swiftpm/
+*.p8
+*.mp4
