@@ -25,7 +25,7 @@ The app provides:
 
 - Raspberry Pi (any model with GPIO, tested on original Pi B).
 - Vertiv IntelliSlot® Relay Card connected to GPIO inputs.
-- Internet or LAN access (for web UI).
+- Internet or LAN access (for web UI and Home Assistant).
 
 ---
 
@@ -137,27 +137,43 @@ LOW_BATTERY_SHUTDOWN_DELAY = 30  # Delay in seconds before shutdown on low batte
 
 ---
 
+## Setting up Home Assistant Webhooks
+
+Home Assistant is notified automatically when:
+
+- **UPS switches to battery** (`on_battery`)
+- **Low battery warning** (`low_battery`)
+- **UPS fault detected** (`ups_fault`)
+
+### Configure webhook URLs:
+
+In `ups-monitor.py`, find the `WEBHOOKS` dictionary:
+
+```python
+WEBHOOKS = {
+    "on_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_on_battery",
+    "low_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_low_battery",
+    "ups_fault": "http://{{your home assitant IP}}:8123/api/webhook/ups_fault",
+}
+```
+
+- Change `{{your home assitant IP}}` to your actual Home Assistant IP address.
+- Make sure you have created matching webhooks in Home Assistant's **Settings → Automations → Webhooks**.
+- Example webhook names:
+  - `ups_on_battery`
+  - `ups_low_battery`
+  - `ups_fault`
+
+When triggered, the app will send a `POST` request to those URLs.
+
+✅ Make sure your Home Assistant allows local webhook access from the Pi.
+
+---
+
 ## API Endpoints
 
 - `GET /api/status` → JSON object with current UPS status.
 - `POST /api/simulate` → Simulate GPIO inputs for testing (only when TEST_MODE=True).
-
----
-
-## Home Assistant Integration
-
-Webhooks are automatically triggered on:
-- On Battery
-- Low Battery
-- UPS Fault
-
-Webhook URLs are configured inside `WEBHOOKS` in `ups-monitor.py`.
-
----
-
-## License
-
-MIT License
 
 ---
 
@@ -166,5 +182,11 @@ MIT License
 - This project is optimized for reliability and speed — no databases, no heavy frameworks.
 - If you lose connection to the Pi, the webpage will automatically display an error until connection is restored.
 - Designed to be simple, fast, and highly reliable for home servers and network UPS monitoring.
+
+---
+
+## License
+
+MIT License
 
 ---

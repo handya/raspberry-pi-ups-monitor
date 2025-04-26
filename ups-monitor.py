@@ -28,9 +28,9 @@ previous_state = current_state.copy()
 state_lock = threading.Lock()
 
 WEBHOOKS = {
-    "on_battery": "http://10.1.1.60:8123/api/webhook/ups_on_battery",
-    "low_battery": "http://10.1.1.60:8123/api/webhook/ups_low_battery",
-    "ups_fault": "http://10.1.1.60:8123/api/webhook/ups_fault",
+    "on_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_on_battery",
+    "low_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_low_battery",
+    "ups_fault": "http://{{your home assitant IP}}:8123/api/webhook/ups_fault",
 }
 
 timer_start = {
