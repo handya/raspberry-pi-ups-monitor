@@ -6,6 +6,8 @@ import time
 import os
 
 TEST_MODE = False
+LOW_BATTERY_SHUTDOWN_DELAY = 30  # seconds
+shutdown_timer = None
 
 app = Flask(__name__)
 
@@ -26,9 +28,9 @@ previous_state = current_state.copy()
 state_lock = threading.Lock()
 
 WEBHOOKS = {
-    "on_battery": "http://<home-assistant-ip>:8123/api/webhook/ups_on_battery",
-    "low_battery": "http://<home-assistant-ip>:8123/api/webhook/ups_low_battery",
-    "ups_fault": "http://<home-assistant-ip>:8123/api/webhook/ups_fault",
+    "on_battery": "http://10.1.1.60:8123/api/webhook/ups_on_battery",
+    "low_battery": "http://10.1.1.60:8123/api/webhook/ups_low_battery",
+    "ups_fault": "http://10.1.1.60:8123/api/webhook/ups_fault",
 }
 
 timer_start = {
@@ -44,6 +46,7 @@ HTML_TEMPLATE = """
     <style>
         body { font-family: sans-serif; background: #111; color: white; text-align: center; }
         .status { margin-top: 20px; font-size: 18px; }
+        .error { color: red; font-weight: bold; margin-top: 10px; }
         .on { fill: lime; stroke: lime; }
         .off { fill: #444; stroke: #444; }
         .flow-line { stroke-width: 3; stroke-dasharray: 6,4; fill: none; }
@@ -90,11 +93,15 @@ HTML_TEMPLATE = """
     <div class="status" id="status-text">
         Loading...
     </div>
+    <div id="error-text" class="error" style="display:none;">
+        Error: Unable to contact UPS monitor
+    </div>
 
     <script>
         const bellMains = document.getElementById('bell-mains');
         const bellInverter = document.getElementById('bell-inverter');
         const bellBattery = document.getElementById('bell-battery');
+        const errorText = document.getElementById('error-text');
         let frame = 0;
 
         setInterval(() => {
@@ -108,10 +115,13 @@ HTML_TEMPLATE = """
         async function fetchStatus() {
             try {
                 const res = await fetch('/api/status');
+                if (!res.ok) throw new Error('HTTP error');
                 const data = await res.json();
                 updateDisplay(data);
+                errorText.style.display = 'none';
             } catch (err) {
                 console.error('Failed to fetch status', err);
+                errorText.style.display = 'block';
             }
         }
 
@@ -126,7 +136,6 @@ HTML_TEMPLATE = """
             document.getElementById('battery-inverter').setAttribute('stroke', states.on_battery ? 'lime' : '#444');
             document.getElementById('bypass-line').setAttribute('stroke', states.on_bypass ? 'lime' : '#444');
 
-            // Show bells
             if (states.on_battery) {
                 bellMains.style.display = 'block';
                 bellMains.style.top = '165px';
@@ -174,6 +183,11 @@ HTML_TEMPLATE = """
 </html>
 """
 
+# -- Rest of the Python server code below remains identical --
+
+# (continued below if needed — do you want me to post full continuation too?)
+
+
 def format_duration(seconds):
     if seconds is None:
         return "0:00"
@@ -194,8 +208,12 @@ def notify_home_assistant(event):
     except requests.RequestException as e:
         print(f"❌ Webhook failed for {event}: {e}")
 
+def shutdown_pi():
+    print("⚡ Shutdown triggered due to low battery!")
+    os.system('sudo shutdown -h now')
+
 def monitor_inputs():
-    global current_state, previous_state, timer_start
+    global current_state, previous_state, timer_start, shutdown_timer
 
     while True:
         new_state = read_ups_state()
@@ -211,6 +229,20 @@ def monitor_inputs():
                             timer_start[signal] = time.time()
                         elif not value and timer_start[signal] is not None:
                             timer_start[signal] = None
+
+                    # Handle low battery shutdown
+                    if signal == "low_battery":
+                        if value:  # low_battery turned ON
+                            if shutdown_timer is None:
+                                shutdown_timer = threading.Timer(LOW_BATTERY_SHUTDOWN_DELAY, shutdown_pi)
+                                shutdown_timer.start()
+                                print(f"⚡ Low battery detected! Shutdown scheduled in {LOW_BATTERY_SHUTDOWN_DELAY} seconds...")
+                        else:  # low_battery turned OFF
+                            if shutdown_timer is not None:
+                                shutdown_timer.cancel()
+                                shutdown_timer = None
+                                print("⚡ Low battery cleared. Shutdown canceled.")
+
             current_state = new_state
         time.sleep(1)
 
