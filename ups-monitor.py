@@ -4,10 +4,14 @@ import threading
 import requests
 import time
 import os
+from gpiozero import LED
 
 TEST_MODE = False
 LOW_BATTERY_SHUTDOWN_DELAY = 30  # seconds
 shutdown_timer = None
+
+ups_fault_led = LED(25)
+network_led = LED(4)
 
 app = Flask(__name__)
 
@@ -229,6 +233,13 @@ def monitor_inputs():
                             timer_start[signal] = time.time()
                         elif not value and timer_start[signal] is not None:
                             timer_start[signal] = None
+                    
+                    if signal in ["ups_fault", "summary_alarm"]:
+                        # Check both ups_fault and summary_alarm together
+                        if current_state["ups_fault"] or current_state["summary_alarm"]:
+                            ups_fault_led.on()
+                        else:
+                            ups_fault_led.off()
 
                     # Handle low battery shutdown
                     if signal == "low_battery":
@@ -262,6 +273,11 @@ def api_status():
         status = current_state.copy()
         status["battery_runtime"] = format_duration(time.time() - timer_start["on_battery"]) if timer_start["on_battery"] else "0:00"
         status["low_battery_duration"] = format_duration(time.time() - timer_start["low_battery"]) if timer_start["low_battery"] else "0:00"
+
+    # Flash LED briefly
+    network_led.on()
+    threading.Timer(0.1, network_led.off).start()  # turn it off after 0.1 second
+
     return jsonify(status)
 
 @app.route('/static/<path:filename>')
@@ -280,5 +296,9 @@ def simulate():
 
 if __name__ == '__main__':
     os.makedirs("static", exist_ok=True)
+
+    # Turn off fault LED (script running OK)
+    ups_fault_led.off()
+
     threading.Thread(target=monitor_inputs, daemon=True).start()
     app.run(host='0.0.0.0', port=80)
