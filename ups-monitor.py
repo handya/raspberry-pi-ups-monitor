@@ -156,7 +156,7 @@ HTML_TEMPLATE = """
             <rect id="battery" x="220" y="210" width="60" height="50" />
             <text x="250" y="205" fill="white" text-anchor="middle">Battery</text>
 
-            <text x="250" y="05" fill="white" text-anchor="middle">UPS</text>
+            <text x="250" y="45" fill="white" text-anchor="middle">UPS</text>
         </svg>
 
         <div id="bell-mains" class="bell"></div>
