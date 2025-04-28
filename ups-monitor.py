@@ -22,7 +22,8 @@ UPS_SIGNALS = {
     "ups_fault": DigitalInputDevice(27),
     "low_battery": DigitalInputDevice(22),
     "on_bypass": DigitalInputDevice(23),
-    "summary_alarm": DigitalInputDevice(24),
+    "alarm": DigitalInputDevice(24),
+    "ups_connected": DigitalInputDevice(15),
 }
 
 # Initial state
@@ -96,6 +97,25 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
+    <div id="disconnect-overlay" style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        color: red;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        font-weight: bold;
+        z-index: 9999;
+        display: none;
+    ">
+        UPS Disconnected
+    </div>
+
     <h1>UPS Status</h1>
 
     <div id="svg-container" style="position: relative; display: inline-block;">
@@ -185,6 +205,13 @@ HTML_TEMPLATE = """
             document.getElementById('load').setAttribute('class', states.on_ups ? 'on' : 'off');
             document.getElementById('battery').setAttribute('class', states.on_battery ? 'on' : 'off');
 
+            // Handle UPS disconnect
+            if (states.ups_connected) {
+                document.getElementById('disconnect-overlay').style.display = 'none';
+            } else {
+                document.getElementById('disconnect-overlay').style.display = 'flex';
+            }
+
             if (states.on_bypass) {
                 document.getElementById('bypass-line').setAttribute('stroke', 'lime');
                 document.getElementById('battery-inverter').setAttribute('stroke', '#444');
@@ -242,7 +269,7 @@ HTML_TEMPLATE = """
                 <div class="status-line"><span class="indicator ${states.ups_fault ? 'indicator-fault' : 'indicator-off'}"></span>UPS Fault</div>
                 <div class="status-line"><span class="indicator ${states.low_battery ? 'indicator-fault' : 'indicator-off'}"></span>Low Battery</div>
                 <div class="status-line"><span class="indicator ${states.on_bypass ? 'indicator-fault' : 'indicator-off'}"></span>On Bypass</div>
-                <div class="status-line"><span class="indicator ${states.summary_alarm ? 'indicator-fault' : 'indicator-off'}"></span>Alarm</div>
+                <div class="status-line"><span class="indicator ${states.alarm ? 'indicator-fault' : 'indicator-off'}"></span>Alarm</div>
                 <div class="status-line">${states.battery_runtime}&nbsp;<b>Battery Runtime:</b></div>
                 <div class="status-line">${states.low_battery_duration}&nbsp;<b>Low Battery Duration:</b></div>
             `;
@@ -298,9 +325,9 @@ def monitor_inputs():
                         elif not value and timer_start[signal] is not None:
                             timer_start[signal] = None
                     
-                    if signal in ["ups_fault", "summary_alarm"]:
-                        # Check both ups_fault and summary_alarm together
-                        if current_state["ups_fault"] or current_state["summary_alarm"]:
+                    if signal in ["ups_fault", "alarm", "ups_connected"]:
+                        # Recalculate overall fault LED state
+                        if (not previous_state["ups_connected"]) or previous_state["ups_fault"] or previous_state["alarm"]:
                             ups_fault_led.on()
                         else:
                             ups_fault_led.off()
@@ -335,8 +362,18 @@ def index():
 def api_status():
     with state_lock:
         status = current_state.copy()
-        status["battery_runtime"] = format_duration(time.time() - timer_start["on_battery"]) if timer_start["on_battery"] else "0:00"
-        status["low_battery_duration"] = format_duration(time.time() - timer_start["low_battery"]) if timer_start["low_battery"] else "0:00"
+        now = time.time()
+
+        # Calculate battery and low battery durations
+        battery_runtime_seconds = int(now - timer_start["on_battery"]) if timer_start["on_battery"] else 0
+        low_battery_duration_seconds = int(now - timer_start["low_battery"]) if timer_start["low_battery"] else 0
+
+        # Add both formatted and raw integer durations
+        status["battery_runtime"] = format_duration(battery_runtime_seconds)
+        status["battery_runtime_seconds"] = battery_runtime_seconds
+
+        status["low_battery_duration"] = format_duration(low_battery_duration_seconds)
+        status["low_battery_duration_seconds"] = low_battery_duration_seconds
 
     # Flash LED briefly
     network_led.on()
