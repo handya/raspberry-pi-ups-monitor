@@ -15,7 +15,7 @@ shutdown_timer = None
 app = Flask(__name__)
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log.jsonl')
-log_buffer = deque(maxlen=100)
+log_buffer = deque(maxlen=1000)
 event_start_times = {}
 
 # Load previous logs into memory
@@ -48,9 +48,9 @@ previous_state = current_state.copy()
 state_lock = threading.Lock()
 
 WEBHOOKS = {
-    "on_battery": "http://10.1.1.60:8123/api/webhook/ups_on_battery",
-    "low_battery": "http://10.1.1.60:8123/api/webhook/ups_low_battery",
-    "ups_fault": "http://10.1.1.60:8123/api/webhook/ups_fault",
+    "on_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_on_battery",
+    "low_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_low_battery",
+    "ups_fault": "http://{{your home assitant IP}}:8123/api/webhook/ups_fault",
 }
 
 timer_start = {
@@ -316,7 +316,7 @@ HTML_TEMPLATE = """
 
             if (states.on_battery) {
                 bellMains.style.display = 'block';
-                bellMains.style.top = '165px';
+                bellMains.style.top = '125px';
                 bellMains.style.left = '20px';
                 bellMains.style.transform = 'translate(15px, 10px)';
             } else {
@@ -325,7 +325,7 @@ HTML_TEMPLATE = """
 
             if (states.ups_fault) {
                 bellInverter.style.display = 'block';
-                bellInverter.style.top = '165px';
+                bellInverter.style.top = '125px';
                 bellInverter.style.left = '220px';
                 bellInverter.style.transform = 'translate(15px, 10px)';
             } else {
@@ -334,7 +334,7 @@ HTML_TEMPLATE = """
 
             if (states.low_battery) {
                 bellBattery.style.display = 'block';
-                bellBattery.style.top = '250px';
+                bellBattery.style.top = '210px';
                 bellBattery.style.left = '220px';
                 bellBattery.style.transform = 'translate(15px, 10px)';
             } else {
@@ -410,15 +410,28 @@ def shutdown_pi():
     os.system('sudo shutdown -h now')
 
 def log_event(event_type, state, duration=None):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     entry = {
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": timestamp,
         "event": event_type,
         "state": "ON" if state else "OFF",
-        "duration": duration
+        "duration": None
     }
+
+    # Patch in-memory buffer if needed
+    if duration is not None:
+        for past_entry in reversed(log_buffer):
+            if past_entry["event"] == event_type:
+                past_entry["duration"] = duration
+                break
+
+    # Add current event to buffer
     log_buffer.append(entry)
-    with open(LOG_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+
+    # Write entire buffer to file
+    with open(LOG_FILE, 'w') as f:
+        for log in log_buffer:
+            f.write(json.dumps(log) + '\n')
 
 def get_system_uptime():
     try:
@@ -428,6 +441,8 @@ def get_system_uptime():
     except Exception as e:
         print(f"Error reading uptime: {e}")
         return 0
+
+REVERSE_TIMER_SIGNALS = {"on_ups", "ups_connected"}
 
 def monitor_inputs():
     global current_state, previous_state, timer_start, shutdown_timer
@@ -440,19 +455,30 @@ def monitor_inputs():
                 prev = previous_state[signal]
                 if value != prev:
                     previous_state[signal] = value
-                    if value:
-                        event_start_times[signal] = now
-                        log_event(signal, True)
-                        if signal in WEBHOOKS:
-                            notify_home_assistant(signal)
-                        if signal in timer_start and timer_start[signal] is None:
-                            timer_start[signal] = now
+
+                    if signal in REVERSE_TIMER_SIGNALS:
+                        # these are “good when ON” → flip logic
+                        if not value:
+                            event_start_times[signal] = now
+                            log_event(signal, False)
+                        else:
+                            start_time = event_start_times.pop(signal, None)
+                            duration = now - start_time if start_time else 0
+                            log_event(signal, True, duration)
                     else:
-                        start_time = event_start_times.pop(signal, None)
-                        duration = now - start_time if start_time else 0
-                        log_event(signal, False, duration)
-                        if signal in timer_start and timer_start[signal] is not None:
-                            timer_start[signal] = None
+                        if value:
+                            event_start_times[signal] = now
+                            log_event(signal, True)
+                            if signal in WEBHOOKS:
+                                notify_home_assistant(signal)
+                            if signal in timer_start and timer_start[signal] is None:
+                                timer_start[signal] = now
+                        else:
+                            start_time = event_start_times.pop(signal, None)
+                            duration = now - start_time if start_time else 0
+                            log_event(signal, False, duration)
+                            if signal in timer_start and timer_start[signal] is not None:
+                                timer_start[signal] = None
 
                     if signal in ["ups_fault", "alarm", "ups_connected"]:
                         if (not previous_state["ups_connected"]) or previous_state["ups_fault"] or previous_state["alarm"]:
