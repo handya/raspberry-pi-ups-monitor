@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template_string, send_file, send_from_directory, request as flask_request
+from flask import Flask, jsonify, render_template_string, send_file, send_from_directory, request as flask_request, Response
 from gpiozero import DigitalInputDevice
 from collections import deque
 import threading
@@ -7,6 +7,7 @@ import time
 import os
 from gpiozero import LED
 import json
+import tempfile
 
 TEST_MODE = False
 LOW_BATTERY_SHUTDOWN_DELAY = 30  # seconds
@@ -979,7 +980,26 @@ def api_status():
 
 @app.route('/api/download_logs')
 def api_download_logs():
-    return send_file(LOG_FILE, as_attachment=True)
+    event_filter = flask_request.args.get('event')  # get ?event= from query
+
+    if not os.path.exists(LOG_FILE):
+        return Response("[]", mimetype='application/json')
+
+    with open(LOG_FILE, 'r') as f:
+        logs = [json.loads(line) for line in f if line.strip()]
+
+    # Apply filter if ?event= provided
+    if event_filter:
+        logs = [log for log in logs if log.get('event') == event_filter]
+
+    # Write filtered logs to a temporary .json file
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as tmp:
+        json.dump(logs, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Send the file for download
+    return send_file(tmp_path, as_attachment=True, download_name='logs.json', mimetype='application/json')
+
 
 @app.route('/static/<path:filename>')
 def static_file(filename):
