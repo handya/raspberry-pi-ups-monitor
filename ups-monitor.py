@@ -730,32 +730,32 @@ def settings_page():
     <html>
     <head>
         <title>Settings</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body { background: #111; color: white; text-align: center; font-family: sans-serif; }
-            .button-row {
-                margin: 20px auto;
-                max-width: 300px;
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
+            body {
+                background: #111;
+                color: white;
+                font-family: sans-serif;
+                margin: 0;
+                padding: 0;
             }
-            button {
-                padding: 12px;
-                font-size: 16px;
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
+
+            .container {
+                width: 90%;
+                max-width: 400px;
+                margin: 0 auto;
+                padding: 20px 0;
             }
+
             .header-container {
                 position: relative;
-                max-width: 300px;
-                margin: 0 auto 20px auto;
-                margin-top: 32px;
+                margin-bottom: 20px;
             }
 
             .header-container h1 {
                 margin: 0;
                 text-align: center;
+                font-size: 24px;
             }
 
             .header-container .back {
@@ -765,30 +765,104 @@ def settings_page():
                 transform: translateY(-50%);
                 background: none;
                 color: #4da6ff;
-                font-size: 14px;
+                font-size: 16px;
                 border: none;
                 cursor: pointer;
             }
-            .shutdown { background-color: #ff4d4d; color: white; }
-            .reboot { background-color: #4da6ff; color: white; }
-            .back { background: none; color: #4da6ff; font-size: 14px; }
+
+            label {
+                display: block;
+                text-align: left;
+                margin-bottom: 5px;
+                font-size: 14px;
+            }
+            
+            .input-row {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+
+            .input-row input {
+                flex: 1;
+                padding: 10px;
+                border-radius: 6px;
+                border: none;
+                font-size: 16px;
+                box-sizing: border-box;
+            }
+
+            .input-row button {
+                padding: 0 16px;
+                min-width: 80px;
+                font-size: 16px;
+                border: none;
+                border-radius: 6px;
+                background-color: #333;
+                color: white;
+                cursor: pointer;
+                white-space: nowrap;
+                height: 40px;
+                box-sizing: border-box;
+            }
+
+            input[type="text"] {
+                width: 100%;
+                padding: 10px;
+                border-radius: 6px;
+                border: none;
+                margin-bottom: 10px;
+                box-sizing: border-box;
+                font-size: 16px;
+            }
+
+            .button-row {
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            button {
+                padding: 12px;
+                font-size: 16px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .save-name {
+                background-color: #333;
+                color: white;
+            }
+
+            .shutdown {
+                background-color: #ff4d4d;
+                color: white;
+            }
+
+            .reboot {
+                background-color: #4da6ff;
+                color: white;
+            }
         </style>
     </head>
     <body>
-        <div class="header-container">
-            <button class="back" onclick="window.location='/'">&lt; Back</button>
-            <h1>Settings</h1>
-        </div>
+        <div class="container">
+            <div class="header-container">
+                <button class="back" onclick="window.location='/'">&lt; Back</button>
+                <h1>Settings</h1>
+            </div>
 
-         <div style="margin: 20px auto; max-width: 300px;">
-            <label for="ups-name">UPS Name:</label><br>
-            <input type="text" id="ups-name" value="{{ settings.ups_name }}" style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="Enter UPS name">
-            <button style="margin-top: 10px; padding: 10px;" onclick="saveUPSName()">Save Name</button>
-        </div>
+            <label for="ups-name">UPS Name:</label>
+            <div class="input-row">
+                <input type="text" id="ups-name" value="{{ settings.ups_name }}" placeholder="Enter UPS name">
+                <button class="save-name" onclick="saveUPSName()">Save</button>
+            </div>
 
-        <div class="button-row">
-            <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
-            <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
+            <div class="button-row">
+                <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
+                <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
+            </div>
         </div>
 
         <script>
@@ -814,7 +888,6 @@ def settings_page():
             .then(() => alert('UPS name saved!'))
             .catch(() => alert('Failed to save UPS name.'));
         }
-
         </script>
     </body>
     </html>
