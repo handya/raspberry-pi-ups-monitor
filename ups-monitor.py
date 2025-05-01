@@ -66,7 +66,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>UPS Monitor</title>
+    <title>{{ settings.ups_name or 'UPS Monitor' }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="/static/shared.js"></script>
     <style>
@@ -211,7 +211,7 @@ HTML_TEMPLATE = """
         UPS Disconnected
     </div>
 
-    <h1>UPS Status</h1>
+    <h1>{{ settings.ups_name or 'UPS' }} Status</h1>
 
     <div id="svg-container" style="position: relative; display: inline-block;">
 
@@ -746,14 +746,39 @@ def settings_page():
                 border-radius: 6px;
                 cursor: pointer;
             }
+            .header-container {
+                position: relative;
+                max-width: 300px;
+                margin: 0 auto 20px auto;
+                margin-top: 32px;
+            }
+
+            .header-container h1 {
+                margin: 0;
+                text-align: center;
+            }
+
+            .header-container .back {
+                position: absolute;
+                left: 0;
+                top: 50%;
+                transform: translateY(-50%);
+                background: none;
+                color: #4da6ff;
+                font-size: 14px;
+                border: none;
+                cursor: pointer;
+            }
             .shutdown { background-color: #ff4d4d; color: white; }
             .reboot { background-color: #4da6ff; color: white; }
-            .back { background: none; color: #4da6ff; font-size: 14px; margin-top: 20px; }
+            .back { background: none; color: #4da6ff; font-size: 14px; }
         </style>
     </head>
     <body>
-        <h1>Settings</h1>
-         <button class="back" onclick="window.location='/'">&lt; Back</button>
+        <div class="header-container">
+            <button class="back" onclick="window.location='/'">&lt; Back</button>
+            <h1>Settings</h1>
+        </div>
 
          <div style="margin: 20px auto; max-width: 300px;">
             <label for="ups-name">UPS Name:</label><br>
@@ -840,8 +865,9 @@ def set_ups_name():
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(settings, f)
 
-    return '', 204
+    log_event('manual_name_change', True)  
 
+    return '', 204
 
 @app.route('/api/status')
 def api_status():
