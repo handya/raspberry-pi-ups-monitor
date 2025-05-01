@@ -1,19 +1,34 @@
-from flask import Flask, jsonify, render_template_string, send_from_directory, request as flask_request
+from flask import Flask, jsonify, render_template_string, send_file, send_from_directory, request as flask_request
 from gpiozero import DigitalInputDevice
+from collections import deque
 import threading
 import requests
 import time
 import os
 from gpiozero import LED
+import json
 
 TEST_MODE = False
 LOW_BATTERY_SHUTDOWN_DELAY = 30  # seconds
 shutdown_timer = None
 
+app = Flask(__name__)
+
+LOG_FILE = "log.jsonl"
+log_buffer = deque(maxlen=100)
+event_start_times = {}
+
+# Load previous logs into memory
+if os.path.exists(LOG_FILE):
+    with open(LOG_FILE, "r") as f:
+        for line in f.readlines()[-100:]:
+            try:
+                log_buffer.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
 ups_fault_led = LED(25)
 network_led = LED(4)
-
-app = Flask(__name__)
 
 # GPIO signal mapping
 UPS_SIGNALS = {
@@ -84,6 +99,7 @@ HTML_TEMPLATE = """
             border-radius: 50%;
             margin-right: 8px;
             flex-shrink: 0;
+            display: inline-block;
         }
         .indicator-on {
             background-color: lime;
@@ -94,6 +110,8 @@ HTML_TEMPLATE = """
         .indicator-fault {
             background-color: red;
         }
+        table { margin: auto; width: 500px; background: #222; border-collapse: collapse; }
+        th, td { border: 1px solid #333; padding: 5px; }
     </style>
 </head>
 <body>
@@ -167,6 +185,15 @@ HTML_TEMPLATE = """
     <div class="status" id="status-text">
         Loading...
     </div>
+
+    <h3>Recent Logs</h3>
+    <button style="margin-bottom: 15px;" onclick="window.location='/logs'">See All Logs</button>
+    <table>
+        <thead><tr><th>Time</th><th>Ago</th><th>Event</th><th>State</th><th>Duration</th></tr></thead>
+        <tbody>
+        </tbody>
+    </table>
+
     <div id="error-text" class="error" style="display:none;">
         Error: Unable to contact UPS monitor
     </div>
@@ -197,6 +224,34 @@ HTML_TEMPLATE = """
                 console.error('Failed to fetch status', err);
                 errorText.style.display = 'block';
             }
+        }
+
+        function timeAgo(timestamp) {
+            const now = new Date();
+            const time = new Date(timestamp);
+            const diffMs = now - time;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHr = Math.floor(diffMin / 60);
+            const diffDay = Math.floor(diffHr / 24);
+
+            if (diffSec < 60) return `${diffSec}s ago`;
+            if (diffMin < 60) return `${diffMin}m ago`;
+            if (diffHr < 24) return `${diffHr}h ago`;
+            return `${diffDay}d ago`;
+        }
+
+        function formatEventName(name) {
+            const SPECIAL_WORDS = ['UPS', 'API', 'CPU'];  // add more as needed
+            return name.split('_')
+                .map(word => {
+                    const upper = word.toUpperCase();
+                    if (SPECIAL_WORDS.includes(upper)) {
+                        return upper;
+                    }
+                    return word.charAt(0).toUpperCase() + word.slice(1);
+                })
+                .join(' ');
         }
 
         function updateDisplay(states) {
@@ -265,7 +320,7 @@ HTML_TEMPLATE = """
 
             const statusText = `
                 <div class="status-line"><span class="indicator ${states.on_ups ? 'indicator-on' : 'indicator-off'}"></span>On UPS</div>
-                <div class="status-line"><span class="indicator ${states.on_battery ? 'indicator-on' : 'indicator-off'}"></span>On Battery</div>
+                <div class="status-line"><span class="indicator ${states.on_battery ? 'indicator-fault' : 'indicator-off'}"></span>On Battery</div>
                 <div class="status-line"><span class="indicator ${states.ups_fault ? 'indicator-fault' : 'indicator-off'}"></span>UPS Fault</div>
                 <div class="status-line"><span class="indicator ${states.low_battery ? 'indicator-fault' : 'indicator-off'}"></span>Low Battery</div>
                 <div class="status-line"><span class="indicator ${states.on_bypass ? 'indicator-fault' : 'indicator-off'}"></span>On Bypass</div>
@@ -274,6 +329,23 @@ HTML_TEMPLATE = """
                 <div class="status-line">${states.low_battery_duration}&nbsp;<b>Low Battery Duration:</b></div>
             `;
             document.getElementById('status-text').innerHTML = statusText;
+
+            if (states.recent_logs && Array.isArray(states.recent_logs)) {
+                const tableBody = document.querySelector('table tbody');
+                // Sort from newest to oldest (assuming latest at end of array)
+                const sortedLogs = states.recent_logs.slice().reverse();
+                tableBody.innerHTML = '';
+                sortedLogs.forEach(log => {
+                    const row = `<tr>
+                        <td>${log.timestamp}</td>
+                        <td>${timeAgo(log.timestamp)}</td>
+                        <td>${formatEventName(log.event)}</td>
+                        <td><span class="indicator ${log.state === 'ON' ? 'indicator-on' : 'indicator-fault'}"></span></td>
+                        <td>${log.duration || ''}</td>
+                    </tr>`;
+                    tableBody.innerHTML += row;
+                });
+            }
         }
 
         setInterval(fetchStatus, 2000);
@@ -305,7 +377,19 @@ def notify_home_assistant(event):
 
 def shutdown_pi():
     print("⚡ Shutdown triggered due to low battery!")
+    log_event('low_battery_shutdown', True) 
     os.system('sudo shutdown -h now')
+
+def log_event(event_type, state, duration=None):
+    entry = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "event": event_type,
+        "state": "ON" if state else "OFF",
+        "duration": duration
+    }
+    log_buffer.append(entry)
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 def monitor_inputs():
     global current_state, previous_state, timer_start, shutdown_timer
@@ -313,33 +397,38 @@ def monitor_inputs():
     while True:
         new_state = read_ups_state()
         with state_lock:
+            now = time.time()
             for signal, value in new_state.items():
                 prev = previous_state[signal]
                 if value != prev:
                     previous_state[signal] = value
-                    if value and signal in WEBHOOKS:
-                        notify_home_assistant(signal)
-                    if signal in timer_start:
-                        if value and timer_start[signal] is None:
-                            timer_start[signal] = time.time()
-                        elif not value and timer_start[signal] is not None:
+                    if value:
+                        event_start_times[signal] = now
+                        log_event(signal, True)
+                        if signal in WEBHOOKS:
+                            notify_home_assistant(signal)
+                        if signal in timer_start and timer_start[signal] is None:
+                            timer_start[signal] = now
+                    else:
+                        start_time = event_start_times.pop(signal, None)
+                        duration = now - start_time if start_time else 0
+                        log_event(signal, False, duration)
+                        if signal in timer_start and timer_start[signal] is not None:
                             timer_start[signal] = None
-                    
+
                     if signal in ["ups_fault", "alarm", "ups_connected"]:
-                        # Recalculate overall fault LED state
                         if (not previous_state["ups_connected"]) or previous_state["ups_fault"] or previous_state["alarm"]:
                             ups_fault_led.on()
                         else:
                             ups_fault_led.off()
 
-                    # Handle low battery shutdown
                     if signal == "low_battery":
-                        if value:  # low_battery turned ON
+                        if value:
                             if shutdown_timer is None:
                                 shutdown_timer = threading.Timer(LOW_BATTERY_SHUTDOWN_DELAY, shutdown_pi)
                                 shutdown_timer.start()
                                 print(f"⚡ Low battery detected! Shutdown scheduled in {LOW_BATTERY_SHUTDOWN_DELAY} seconds...")
-                        else:  # low_battery turned OFF
+                        else:
                             if shutdown_timer is not None:
                                 shutdown_timer.cancel()
                                 shutdown_timer = None
@@ -352,11 +441,149 @@ def monitor_inputs():
 def index():
     with state_lock:
         state_copy = current_state.copy()
+        now = time.time()
         timers = {
-            k: format_duration(time.time() - v) if v else "0:00"
+            k: format_duration(now - v) if v else "0:00"
             for k, v in timer_start.items()
         }
-    return render_template_string(HTML_TEMPLATE, states=state_copy, timers=timers)
+        recent_logs = list(log_buffer)[-10:]
+    return render_template_string(HTML_TEMPLATE, states=state_copy, timers=timers, recent_logs=recent_logs)
+
+@app.route('/logs')
+def view_logs():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>All Logs</title>
+        <style>
+            body { background: #111; color: white; text-align: center; font-family: sans-serif; }
+            table { margin: auto; width: 600px; background: #222; border-collapse: collapse;}
+            th, td { border: 1px solid #333; padding: 5px; }
+            .indicator {
+                width: 15px;
+                height: 15px;
+                border-radius: 50%;
+                margin-right: 8px;
+                flex-shrink: 0;
+                display: inline-block;
+            }
+            .indicator-on {
+                background-color: lime;
+            }
+            .indicator-off {
+                background-color: #444;
+            }
+            .indicator-fault {
+                background-color: red;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>All Logs</h1>
+        <button style="margin-bottom: 15px;" onclick="window.location='/'">Back</button>
+        <button style="margin-bottom: 15px;" onclick="window.location='/api/download_logs'">Download Logs</button>
+        <button style="margin-bottom: 15px;" onclick="deleteAllLogs()">Delete All Logs</button>
+        <table id="all-logs">
+            <thead><tr><th>Time</th><th>Ago</th><th>Event</th><th>State</th><th>Duration</th><th>Delete</th></tr></thead>
+            <tbody></tbody>
+        </table>
+        <script>
+        function timeAgo(timestamp) {
+            const now = new Date();
+            const time = new Date(timestamp);
+            const diffMs = now - time;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHr = Math.floor(diffMin / 60);
+            const diffDay = Math.floor(diffHr / 24);
+
+            if (diffSec < 60) return `${diffSec}s ago`;
+            if (diffMin < 60) return `${diffMin}m ago`;
+            if (diffHr < 24) return `${diffHr}h ago`;
+            return `${diffDay}d ago`;
+        }
+
+        function formatEventName(name) {
+            const SPECIAL_WORDS = ['UPS', 'API', 'CPU'];  // add more as needed
+            return name.split('_')
+                .map(word => {
+                    const upper = word.toUpperCase();
+                    if (SPECIAL_WORDS.includes(upper)) {
+                        return upper;
+                    }
+                    return word.charAt(0).toUpperCase() + word.slice(1);
+                })
+                .join(' ');
+        }
+
+        async function fetchAllLogs() {
+            const res = await fetch('/api/download_logs');
+            const text = await res.text();
+            
+            const logs = text.trim().split('\\n')
+            .filter(line => line.trim().length > 0)  // skip empty lines
+            .map(line => {
+                try {
+                    return JSON.parse(line);
+                } catch (err) {
+                    console.error('Invalid JSON line:', line, err);
+                    return null;
+                }
+            })
+            .filter(log => log !== null);  // remove failed parses
+
+            const tbody = document.querySelector('#all-logs tbody');
+            tbody.innerHTML = '';
+            logs.reverse().forEach((log, index) => {
+                tbody.innerHTML += `<tr>
+                    <td>${log.timestamp}</td>
+                    <td>${timeAgo(log.timestamp)}</td>
+                    <td>${formatEventName(log.event)}</td>
+                    <td><span class="indicator ${log.state === 'ON' ? 'indicator-on' : 'indicator-fault'}"></span></td>
+                    <td>${log.duration || ''}</td>
+                    <td><button onclick="deleteLog(${logs.length - index - 1})">X</button></td>
+                </tr>`;
+            });
+        }
+
+        async function deleteLog(index) {
+            if (!confirm('Delete this log entry?')) return;
+            await fetch('/api/delete_log/' + index, { method: 'POST' });
+            fetchAllLogs();
+        }
+
+        async function deleteAllLogs() {
+            if (!confirm('Delete ALL logs?')) return;
+            await fetch('/api/delete_all_logs', { method: 'POST' });
+            fetchAllLogs();
+        }
+
+        fetchAllLogs();
+        </script>
+    </body>
+    </html>
+    """
+
+@app.route('/api/delete_all_logs', methods=['POST'])
+def delete_all_logs():
+    open(LOG_FILE, 'w').close()  # clear file
+    log_buffer.clear()  # clear in-memory buffer
+    return jsonify({"success": True})
+
+@app.route('/api/delete_log/<int:index>', methods=['POST'])
+def delete_log(index):
+    try:
+        logs = [json.loads(line) for line in open(LOG_FILE)]
+        del logs[index]
+        with open(LOG_FILE, 'w') as f:
+            for log in logs:
+                f.write(json.dumps(log) + '\n')
+        log_buffer.clear()
+        log_buffer.extend(logs[-100:])
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/status')
 def api_status():
@@ -375,11 +602,17 @@ def api_status():
         status["low_battery_duration"] = format_duration(low_battery_duration_seconds)
         status["low_battery_duration_seconds"] = low_battery_duration_seconds
 
+        status["recent_logs"] = list(log_buffer)[-10:]
+
     # Flash LED briefly
     network_led.on()
     threading.Timer(0.1, network_led.off).start()  # turn it off after 0.1 second
 
     return jsonify(status)
+
+@app.route('/api/download_logs')
+def api_download_logs():
+    return send_file(LOG_FILE, as_attachment=True)
 
 @app.route('/static/<path:filename>')
 def static_file(filename):
@@ -400,6 +633,8 @@ if __name__ == '__main__':
 
     # Turn off fault LED (script running OK)
     ups_fault_led.off()
+
+    log_event('monitor_started', True)  
 
     threading.Thread(target=monitor_inputs, daemon=True).start()
     app.run(host='0.0.0.0', port=80)
