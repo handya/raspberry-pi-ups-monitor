@@ -52,12 +52,6 @@ previous_state = current_state.copy()
 
 state_lock = threading.Lock()
 
-WEBHOOKS = {
-    "on_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_on_battery",
-    "low_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_low_battery",
-    "ups_fault": "http://{{your home assitant IP}}:8123/api/webhook/ups_fault",
-}
-
 timer_start = {
     "on_battery": None,
     "low_battery": None,
@@ -431,10 +425,16 @@ def read_ups_state():
     else:
         return {name: device.value == 1 for name, device in UPS_SIGNALS.items()}
 
-def notify_home_assistant(event):
+def send_webhook(event):
+    webhook_url = settings.get('webhooks', {}).get(event)
+
+    if not webhook_url:
+        print(f"⚠️ Skipping webhook for {event} (no URL set)")
+        return
+
     try:
-        requests.post(WEBHOOKS[event], timeout=5)
-        print(f"✅ Webhook for {event}")
+        requests.post(webhook_url, timeout=5)
+        print(f"✅ Webhook sent for {event}")
     except requests.RequestException as e:
         print(f"❌ Webhook failed for {event}: {e}")
 
@@ -511,8 +511,8 @@ def monitor_inputs():
                         if value:
                             event_start_times[signal] = now
                             log_event(signal, True)
-                            if signal in WEBHOOKS:
-                                notify_home_assistant(signal)
+                            if signal in settings.get('webhooks', {}):
+                                send_webhook(signal)
                             if signal in timer_start and timer_start[signal] is None:
                                 timer_start[signal] = now
                         else:
@@ -648,7 +648,7 @@ def view_logs():
                 <button class="text-button back-button" onclick="window.location='/'">
                     <span class="chevron">‹</span> Back
                 </button>
-                <button class="text-button" onclick="window.location='/api/download_logs'">
+                <button class="text-button" onclick="window.location='/api/download/logs.json'">
                     Download Logs
                 </button>
                 <button class="text-button delete-button" onclick="deleteAllLogs()">
@@ -733,143 +733,40 @@ def settings_page():
         <title>Settings</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {
-                background: #111;
-                color: white;
-                font-family: sans-serif;
-                margin: 0;
-                padding: 0;
-            }
-
-            .container {
-                width: 90%;
-                max-width: 400px;
-                margin: 0 auto;
-                padding: 20px 0;
-            }
-
-            .header-container {
-                position: relative;
-                margin-bottom: 20px;
-            }
-
-            .header-container h1 {
-                margin: 0;
-                text-align: center;
-                font-size: 24px;
-            }
-
-            .header-container .back {
-                position: absolute;
-                left: 0;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                color: #4da6ff;
-                font-size: 16px;
-                border: none;
-                cursor: pointer;
-            }
-
-            label {
-                display: block;
-                text-align: left;
-                margin-bottom: 5px;
-                font-size: 14px;
-            }
-            
-            .input-row {
-                display: flex;
-                gap: 10px;
-                margin-bottom: 20px;
-            }
-
-            .input-row input {
-                flex: 1;
-                padding: 10px;
-                border-radius: 6px;
-                border: none;
-                font-size: 16px;
-                box-sizing: border-box;
-            }
-
-            .input-row button {
-                padding: 0 16px;
-                min-width: 80px;
-                font-size: 16px;
-                border: none;
-                border-radius: 6px;
-                background-color: #333;
-                color: white;
-                cursor: pointer;
-                white-space: nowrap;
-                height: 40px;
-                box-sizing: border-box;
-            }
-
-            input[type="text"] {
-                width: 100%;
-                padding: 10px;
-                border-radius: 6px;
-                border: none;
-                margin-bottom: 10px;
-                box-sizing: border-box;
-                font-size: 16px;
-            }
-
-            .button-row {
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            button {
-                padding: 12px;
-                font-size: 16px;
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-
-            .save-name {
-                background-color: #333;
-                color: white;
-            }
-
-            .shutdown {
-                background-color: #ff4d4d;
-                color: white;
-            }
-
-            .reboot {
-                background-color: #4da6ff;
-                color: white;
-            }
-            .back-button .chevron {
-                font-size: 18px;
-                margin-right: 4px;
-            }
+            body { background: #111; color: white; font-family: sans-serif; margin: 0; padding: 0; }
+            .container { width: 90%; max-width: 400px; margin: auto; padding: 20px 0; }
+            .header-container { position: relative; margin-bottom: 20px; }
+            .header-container h1 { margin: 0; text-align: center; font-size: 24px; }
+            .header-container .back { position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+                background: none; color: #4da6ff; font-size: 16px; border: none; cursor: pointer; }
+            label { display: block; text-align: left; margin-bottom: 5px; font-size: 14px; }
+            input[type="text"] { width: 100%; padding: 10px; border-radius: 6px; border: none; margin-bottom: 15px;
+                box-sizing: border-box; font-size: 16px; }
+            button { padding: 12px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; }
+            .save { background-color: #333; color: white; width: 100%; margin-bottom: 20px; }
+            .shutdown { background-color: #ff4d4d; color: white; margin-bottom: 10px; }
+            .reboot { background-color: #4da6ff; color: white; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header-container">
-                <button class="back" onclick="window.location='/'">
-                    <span class="chevron">‹</span> Back
-                </button>
+                <button class="back" onclick="window.location='/'"><span class="chevron">‹</span> Back</button>
                 <h1>Settings</h1>
             </div>
-
             <label for="ups-name">UPS Name:</label>
-            <div class="input-row">
-                <input type="text" id="ups-name" value="{{ settings.ups_name }}" placeholder="Enter UPS name">
-                <button class="save-name" onclick="saveUPSName()">Save</button>
-            </div>
+            <input type="text" id="ups-name" value="{{ settings.get('ups_name', '') }}" placeholder="Enter UPS name">
+            <label for="webhook-on-battery">On Battery Webhook:</label>
+            <input type="text" id="webhook-on-battery" value="{{ settings.get('webhooks', {}).get('on_battery') or '' }}" placeholder="Enter On Battery Webhook">
+            <label for="webhook-low-battery">Low Battery Webhook:</label>
+            <input type="text" id="webhook-low-battery" value="{{ settings.get('webhooks', {}).get('low_battery') or '' }}" placeholder="Enter Low Battery Webhook">
+            <label for="webhook-ups-fault">UPS Fault Webhook:</label>
+            <input type="text" id="webhook-ups-fault" value="{{ settings.get('webhooks', {}).get('ups_fault') or '' }}" placeholder="Enter UPS Fault Webhook">
 
-            <div class="button-row">
-                <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
-                <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
-            </div>
+            <button class="save" onclick="saveSettings()">Save All</button>
+
+            <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
+            <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
         </div>
 
         <script>
@@ -881,19 +778,22 @@ def settings_page():
             }
         }
 
-        function saveUPSName() {
-            const name = document.getElementById('ups-name').value;
-            if (name.trim() === '') {
-                alert('Please enter a UPS name.');
-                return;
-            }
-            fetch('/api/set_ups_name', {
+        function saveSettings() {
+            const payload = {
+                ups_name: document.getElementById('ups-name').value,
+                webhooks: {
+                    on_battery: document.getElementById('webhook-on-battery').value,
+                    low_battery: document.getElementById('webhook-low-battery').value,
+                    ups_fault: document.getElementById('webhook-ups-fault').value
+                }
+            };
+            fetch('/api/save_settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
+                body: JSON.stringify(payload)
             })
-            .then(() => alert('UPS name saved!'))
-            .catch(() => alert('Failed to save UPS name.'));
+            .then(() => alert('Settings saved!'))
+            .catch(() => alert('Failed to save settings.'));
         }
         </script>
     </body>
@@ -932,20 +832,28 @@ def reboot():
     os.system('sudo reboot')
     return '', 204
 
-@app.route('/api/set_ups_name', methods=['POST'])
-def set_ups_name():
+@app.route('/api/save_settings', methods=['POST'])
+def save_settings():
     global settings
     data = flask_request.get_json()
-    ups_name = data.get('name')
-    if not ups_name:
-        return 'Invalid name', 400
 
-    settings['ups_name'] = ups_name
+    # Update ups_name
+    settings['ups_name'] = data.get('ups_name', '')
 
+    # Ensure webhooks section exists
+    if 'webhooks' not in settings:
+        settings['webhooks'] = {}
+
+    # Process webhooks: save as null if empty string
+    for key in ['on_battery', 'low_battery', 'ups_fault']:
+        value = data['webhooks'].get(key)
+        settings['webhooks'][key] = value if value.strip() else None
+
+    # Save to file
     with open(SETTINGS_FILE, 'w') as f:
-        json.dump(settings, f)
+        json.dump(settings, f, indent=2)
 
-    log_event('manual_name_change', True)  
+    log_event('settings_updated', True)
 
     return '', 204
 
@@ -979,6 +887,10 @@ def api_status():
     return jsonify(status)
 
 @app.route('/api/download_logs')
+def api_view_logs():
+    return send_file(LOG_FILE, as_attachment=True)
+
+@app.route('/api/download/logs.json')
 def api_download_logs():
     event_filter = flask_request.args.get('event')  # get ?event= from query
 
