@@ -844,12 +844,18 @@ def settings_page():
                 background-color: #4da6ff;
                 color: white;
             }
+            .back-button .chevron {
+                font-size: 18px;
+                margin-right: 4px;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header-container">
-                <button class="back" onclick="window.location='/'">&lt; Back</button>
+                <button class="back" onclick="window.location='/'">
+                    <span class="chevron">‹</span> Back
+                </button>
                 <h1>Settings</h1>
             </div>
 
