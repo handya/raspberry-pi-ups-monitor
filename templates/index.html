@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ settings.ups_name or 'UPS Monitor' }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/static/shared.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #111; color: white; text-align: center; }
+        .status { 
+            margin-top: 20px; 
+            font-size: 18px; 
+            display: flex;
+            flex-direction: column;
+            align-items:center; 
+        }
+        .error { color: red; font-weight: bold; margin-top: 10px; }
+        .on { fill: lime; stroke: lime; }
+        .off { fill: #444; stroke: #444; }
+        .flow-line { stroke-width: 3; stroke-dasharray: 6,4; fill: none; }
+        svg {
+            width: 100%;  /* scale SVG to container */
+            max-width: 500px; /* cap max size on desktop */
+            height: auto;
+        }
+        .bell {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-image: url('/static/bell-sprite.png');
+            background-repeat: no-repeat;
+            background-size: 240px 30px; /* 8 frames × 30px */
+            display: none;
+        }
+        .status-line {
+            display: flex;
+            width: 120px;
+            align-items: center;
+            justify-content: left;
+            margin: 5px 0;
+        }
+        .time-line {
+            display: flex;
+            width: 300px;
+            align-items: center;
+            justify-content: center;
+            margin: 5px 0;
+        }
+        .indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 8px;
+            flex-shrink: 0;
+            display: inline-block;
+        }
+        .indicator-on {
+            background-color: lime;
+        }
+        .indicator-off {
+            background-color: #444;
+        }
+        .indicator-fault {
+            background-color: red;
+        }
+        table { 
+            margin: auto; 
+            width: 100%;  /* changed from 500px to 100% */
+            max-width: 600px; /* keep it nice on desktop */
+            background: #222; 
+            border-collapse: collapse; 
+            box-sizing: border-box; 
+        }
+        th, td { border: 1px solid #333; padding: 5px; }
+        .container {
+            padding-top: 10px;
+            box-sizing: border-box;
+            position: relative;
+            max-width: 600px;
+            margin: auto;
+        }
+        .see-all-btn {
+            background: none;
+            border: none;
+            color: #0a84ff;  /* iOS blue */
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .see-all-btn:focus {
+            outline: none;
+        }
+
+        .chevron {
+            font-size: 18px;
+            margin-left: 4px;
+        }
+        
+        .settings-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .settings-button svg {
+            width: 32px;
+            height: 32px;
+            fill: #339af0;
+        }
+
+        .settings-button:hover svg {
+            fill: #66bfff;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+        <button class="settings-button" onclick="window.location='/settings'">
+    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="48" height="48" viewBox="0,0,256,256">
+    <g fill="#339af0" fill-rule="nonzero" stroke="none" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10" stroke-dasharray="" stroke-dashoffset="0" font-family="none" font-weight="none" font-size="none" text-anchor="none" style="mix-blend-mode: normal"><g transform="scale(4,4)"><path d="M32,9c-0.585,0 -1.09919,0.4007 -1.24219,0.9707l-0.52734,2.11133c-1.15735,0.10153 -2.27875,0.31915 -3.37109,0.60938l-1.22656,-1.81836c-0.329,-0.487 -0.94805,-0.68633 -1.49805,-0.48633c-0.55,0.201 -0.89694,0.75289 -0.83594,1.33789l0.22656,2.17969c-1.03908,0.48754 -2.03271,1.05138 -2.96484,1.70313l-1.76953,-1.2832c-0.475,-0.345 -1.12622,-0.31936 -1.57422,0.05664c-0.448,0.376 -0.58513,1.01302 -0.32812,1.54102l0.95117,1.95508c-0.80695,0.80906 -1.53374,1.6958 -2.19336,2.63281l-2.10351,-0.60156c-0.565,-0.162 -1.16989,0.0848 -1.46289,0.5918c-0.293,0.507 -0.2023,1.15155 0.2207,1.56055l1.57422,1.52344c-0.47782,1.02714 -0.86842,2.10002 -1.16797,3.21289l-2.1875,0.1543c-0.586,0.041 -1.06892,0.48064 -1.16992,1.05664c-0.101,0.576 0.20323,1.15162 0.74023,1.39063l1.98828,0.88867c-0.04797,0.56511 -0.07812,1.13536 -0.07812,1.71289c0,0.57819 0.03004,1.1491 0.07813,1.71484l-1.98828,0.88672c-0.537,0.239 -0.84123,0.81658 -0.74023,1.39258c0.101,0.576 0.58587,1.01369 1.17187,1.05469l2.18555,0.1543c0.29939,1.11229 0.69048,2.18428 1.16797,3.21094l-1.57422,1.52344c-0.423,0.408 -0.5127,1.05355 -0.2207,1.56055c0.292,0.507 0.89789,0.7538 1.46289,0.5918l2.10156,-0.60156c0.66002,0.93785 1.38772,1.82506 2.19531,2.63477l-0.95117,1.95313c-0.258,0.529 -0.11988,1.16502 0.32813,1.54102c0.448,0.377 1.09822,0.40164 1.57422,0.05664l1.76758,-1.2832c0.93279,0.65239 1.92689,1.21714 2.9668,1.70508l-0.22656,2.17969c-0.061,0.585 0.28594,1.13789 0.83594,1.33789c0.55,0.2 1.171,0.00067 1.5,-0.48633l1.22656,-1.81836c1.09178,0.28997 2.21243,0.5079 3.36914,0.60938l0.52734,2.11133c0.143,0.57 0.65719,0.9707 1.24219,0.9707c0.585,0 1.09919,-0.4007 1.24219,-0.9707l0.52734,-2.11133c1.15671,-0.10148 2.27736,-0.31941 3.36914,-0.60937l1.22656,1.81836c0.329,0.487 0.95,0.68633 1.5,0.48633c0.55,-0.201 0.89694,-0.75289 0.83594,-1.33789l-0.22656,-2.17969c1.0386,-0.48732 2.03113,-1.05175 2.96289,-1.70312l1.76953,1.2832c0.475,0.345 1.12817,0.31936 1.57617,-0.05664c0.448,-0.376 0.58512,-1.01302 0.32813,-1.54102l-0.95117,-1.95508c0.80695,-0.80906 1.53374,-1.6958 2.19336,-2.63281l2.10352,0.60156c0.565,0.162 1.16989,-0.0848 1.46289,-0.5918c0.293,-0.507 0.2023,-1.15155 -0.2207,-1.56055l-1.57422,-1.52344c0.47782,-1.02714 0.86842,-2.10002 1.16797,-3.21289l2.1875,-0.1543c0.586,-0.041 1.06792,-0.47869 1.16992,-1.05469c0.101,-0.576 -0.20323,-1.15358 -0.74023,-1.39258l-1.98828,-0.88672c0.04808,-0.56574 0.07813,-1.13665 0.07813,-1.71484c0,-0.57819 -0.03004,-1.1491 -0.07812,-1.71484l1.98633,-0.88672c0.537,-0.239 0.84223,-0.81658 0.74023,-1.39258c-0.101,-0.576 -0.58392,-1.01369 -1.16992,-1.05469l-2.18555,-0.1543c-0.29962,-1.11315 -0.69194,-2.18552 -1.16992,-3.21289l1.57617,-1.52344c0.423,-0.408 0.51175,-1.05355 0.21875,-1.56055c-0.292,-0.507 -0.89594,-0.7538 -1.46094,-0.5918l-2.10352,0.60156c-0.65962,-0.93701 -1.38641,-1.82375 -2.19336,-2.63281l0.95117,-1.95312c0.258,-0.529 0.11988,-1.16502 -0.32812,-1.54102c-0.448,-0.377 -1.10017,-0.40164 -1.57617,-0.05664l-1.76758,1.2832c-0.93241,-0.65202 -1.92541,-1.21737 -2.96484,-1.70508l0.22656,-2.17969c0.061,-0.585 -0.28594,-1.13789 -0.83594,-1.33789c-0.55,-0.2 -1.171,-0.00067 -1.5,0.48633l-1.22656,1.81836c-1.09178,-0.28997 -2.21243,-0.5079 -3.36914,-0.60937l-0.52734,-2.11133c-0.143,-0.57 -0.65719,-0.9707 -1.24219,-0.9707zM30,16.13672v10.21094c-2.32934,0.82421 -4,3.04047 -4,5.65234c0,0.37417 0.038,0.73855 0.10352,1.09375l-8.85352,5.11328c-0.80402,-1.90863 -1.25,-4.00584 -1.25,-6.20703c0,-8.15837 6.10888,-14.87749 14,-15.86328zM34,16.13672c7.89112,0.98579 14,7.70492 14,15.86328c0,2.20119 -0.44598,4.2984 -1.25,6.20703l-8.85352,-5.11328c0.06552,-0.3552 0.10352,-0.71958 0.10352,-1.09375c0,-2.61187 -1.67066,-4.82814 -4,-5.65234zM32,30c1.105,0 2,0.895 2,2c0,1.105 -0.895,2 -2,2c-1.105,0 -2,-0.895 -2,-2c0,-1.105 0.895,-2 2,-2zM28.10352,36.55859c1.04867,0.89741 2.40786,1.44141 3.89648,1.44141c1.48863,0 2.84781,-0.544 3.89648,-1.44141l8.83594,5.10156c-2.92211,3.84546 -7.52975,6.33984 -12.73242,6.33984c-5.20267,0 -9.81031,-2.49439 -12.73242,-6.33984z"></path></g></g>
+    </svg>
+    </button>
+
+    <div id="disconnect-overlay" style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        color: red;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        font-weight: bold;
+        z-index: 9999;
+        display: none;
+    ">
+        UPS Disconnected
+    </div>
+
+    <h1>{{ settings.ups_name or 'UPS' }} Status</h1>
+
+    <div id="svg-container" style="position: relative; display: inline-block;">
+
+        <svg id="ups-diagram" width="500" height="300" viewBox="0 0 500 300">
+            <!-- UPS Box (around inverter and battery) -->
+            <rect x="150" y="60" width="200" height="220" stroke="gray" stroke-width="2" fill="none" />
+
+            <line id="mains-inverter" x1="80" y1="150" x2="220" y2="150" class="flow-line" />
+            <line id="inverter-load" x1="280" y1="150" x2="420" y2="150" class="flow-line" />
+            <line id="battery-inverter" x1="250" y1="210" x2="250" y2="175" class="flow-line" />
+
+            <path id="on-line-bypass" d="
+                M 80 150 H 180
+                V 80
+                H 320
+                V 150
+                H 430
+            " class="flow-line" />
+
+            <path id="bypass-line" d="
+                M 80 150 H 120
+                V 20
+                H 380
+                V 150
+                H 430
+            " class="flow-line" />
+
+            <rect id="mains" x="20" y="125" width="60" height="50" />
+            <text x="50" y="115" fill="white" text-anchor="middle">Mains</text>
+
+            <rect id="inverter" x="220" y="125" width="60" height="50" />
+            <text x="250" y="115" fill="white" text-anchor="middle">Inverter</text>
+
+            <rect id="load" x="420" y="125" width="60" height="50" />
+            <text x="450" y="115" fill="white" text-anchor="middle">Load</text>
+
+            <rect id="battery" x="220" y="210" width="60" height="50" />
+            <text x="250" y="205" fill="white" text-anchor="middle">Battery</text>
+
+            <text x="250" y="45" fill="white" text-anchor="middle">UPS</text>
+        </svg>
+
+        <div id="bell-mains" class="bell"></div>
+        <div id="bell-inverter" class="bell"></div>
+        <div id="bell-battery" class="bell"></div>
+    </div>
+
+    <div class="status" id="status-text">
+        Loading...
+    </div>
+    <div class="status" id="time-text">
+        Loading...
+    </div>
+
+    <h3 style="display: flex; justify-content: space-between; align-items: center; margin: auto; width: 100%; max-width: 600px; padding-bottom: 16px; padding-top: 32px;">
+        Recent Logs
+        <button class="see-all-btn" onclick="window.location='/logs'">
+            See All Logs <span class="chevron">›</span>
+        </button>
+    </h3>
+    <table>
+        <thead><tr><th>Time</th><th>Ago</th><th>Event</th><th>State</th><th>Duration</th></tr></thead>
+        <tbody>
+        </tbody>
+    </table>
+
+    <div id="error-text" class="error" style="display:none;">
+        Error: Unable to contact UPS monitor
+    </div>
+
+    <script>
+        const bellMains = document.getElementById('bell-mains');
+        const bellInverter = document.getElementById('bell-inverter');
+        const bellBattery = document.getElementById('bell-battery');
+        const errorText = document.getElementById('error-text');
+        let frame = 0;
+
+        setInterval(() => {
+            const offset = `-${frame * 30}px 0px`;
+            bellMains.style.backgroundPosition = offset;
+            bellInverter.style.backgroundPosition = offset;
+            bellBattery.style.backgroundPosition = offset;
+            frame = (frame + 1) % 8;
+        }, 500);
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) throw new Error('HTTP error');
+                const data = await res.json();
+                updateDisplay(data);
+                errorText.style.display = 'none';
+            } catch (err) {
+                console.error('Failed to fetch status', err);
+                errorText.style.display = 'block';
+            }
+        }
+
+        function updateDisplay(states) {
+            document.getElementById('mains').setAttribute('class', states.on_battery ? 'off' : 'on');
+            document.getElementById('inverter').setAttribute('class', states.ups_fault ? 'off' : 'on');
+            document.getElementById('load').setAttribute('class', states.on_ups ? 'on' : 'off');
+            document.getElementById('battery').setAttribute('class', states.on_battery ? 'on' : 'off');
+
+            // Handle UPS disconnect
+            if (states.ups_connected) {
+                document.getElementById('disconnect-overlay').style.display = 'none';
+            } else {
+                document.getElementById('disconnect-overlay').style.display = 'flex';
+            }
+
+            if (states.on_bypass) {
+                document.getElementById('bypass-line').setAttribute('stroke', 'lime');
+                document.getElementById('battery-inverter').setAttribute('stroke', '#444');
+                document.getElementById('inverter-load').setAttribute('stroke', '#444');
+                document.getElementById('on-line-bypass').setAttribute('stroke', 'none');
+                document.getElementById('mains-inverter').setAttribute('stroke', '#444');
+
+            } else if (states.on_battery) {
+                document.getElementById('battery-inverter').setAttribute('stroke', 'lime');
+                document.getElementById('inverter-load').setAttribute('stroke', 'lime');
+                document.getElementById('bypass-line').setAttribute('stroke', 'none');
+                document.getElementById('on-line-bypass').setAttribute('stroke', 'none');
+                document.getElementById('mains-inverter').setAttribute('stroke', '#444');
+                document.getElementById('battery-inverter').setAttribute('stroke', 'lime');
+            } else {
+                document.getElementById('battery-inverter').setAttribute('stroke', 'lime');
+                document.getElementById('inverter-load').setAttribute('stroke', '#444');
+                document.getElementById('bypass-line').setAttribute('stroke', states.on_bypass ? 'lime' : 'none');
+                document.getElementById('on-line-bypass').setAttribute('stroke', states.on_ups ? 'lime' : 'none');
+                document.getElementById('mains-inverter').setAttribute('stroke', '#444');
+                document.getElementById('battery-inverter').setAttribute('stroke', '#444');
+                document.getElementById('battery').setAttribute('class', states.ups_fault ? 'off' : 'on');
+            }
+
+            if (states.on_battery) {
+                bellMains.style.display = 'block';
+                bellMains.style.top = '125px';
+                bellMains.style.left = '20px';
+                bellMains.style.transform = 'translate(15px, 10px)';
+            } else {
+                bellMains.style.display = 'none';
+            }
+
+            if (states.ups_fault) {
+                bellInverter.style.display = 'block';
+                bellInverter.style.top = '125px';
+                bellInverter.style.left = '220px';
+                bellInverter.style.transform = 'translate(15px, 10px)';
+            } else {
+                bellInverter.style.display = 'none';
+            }
+
+            if (states.low_battery) {
+                bellBattery.style.display = 'block';
+                bellBattery.style.top = '210px';
+                bellBattery.style.left = '220px';
+                bellBattery.style.transform = 'translate(15px, 10px)';
+            } else {
+                bellBattery.style.display = 'none';
+            }
+
+            const statusText = `
+                <div class="status-line"><span class="indicator ${states.on_ups ? 'indicator-on' : 'indicator-off'}"></span>On UPS</div>
+                <div class="status-line"><span class="indicator ${states.on_battery ? 'indicator-fault' : 'indicator-off'}"></span>On Battery</div>
+                <div class="status-line"><span class="indicator ${states.ups_fault ? 'indicator-fault' : 'indicator-off'}"></span>UPS Fault</div>
+                <div class="status-line"><span class="indicator ${states.low_battery ? 'indicator-fault' : 'indicator-off'}"></span>Low Battery</div>
+                <div class="status-line"><span class="indicator ${states.on_bypass ? 'indicator-fault' : 'indicator-off'}"></span>On Bypass</div>
+                <div class="status-line"><span class="indicator ${states.alarm ? 'indicator-fault' : 'indicator-off'}"></span>Alarm</div>
+            `;
+            document.getElementById('status-text').innerHTML = statusText;
+
+            const timeText = `
+                <div class="time-line">Battery Runtime:&nbsp;${states.battery_runtime}</div>
+                <div class="time-line">Low Battery Duration:&nbsp;${states.low_battery_duration}</div>
+                <div class="time-line">System Uptime:&nbsp;${states.system_uptime}</div>
+            `;
+            document.getElementById('time-text').innerHTML = timeText;
+
+            if (states.recent_logs && Array.isArray(states.recent_logs)) {
+                const tableBody = document.querySelector('table tbody');
+                // Sort from newest to oldest (assuming latest at end of array)
+                const sortedLogs = states.recent_logs.slice().reverse();
+                tableBody.innerHTML = '';
+                sortedLogs.forEach(log => {
+                    const row = `<tr>
+                        <td>${log.timestamp}</td>
+                        <td>${timeAgo(log.timestamp)}</td>
+                        <td>${formatEventName(log.event)}</td>
+                       <td><span class="indicator ${getIndicatorClass(log.event, log.state)}"></span></td>
+                        <td>${formatDuration(log.duration)}</td>
+                    </tr>`;
+                    tableBody.innerHTML += row;
+                });
+            }
+        }
+
+        setInterval(fetchStatus, 2000);
+        fetchStatus();
+    </script>
+</div>
+</body>
+</html>

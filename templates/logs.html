@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>All Logs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/static/shared.js"></script>
+    <style>
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
+        .container { padding: 10px; box-sizing: border-box; }
+        table { 
+            margin: auto; 
+            width: 100%; 
+            max-width: 600px; 
+            background: #222; 
+            border-collapse: collapse; 
+            box-sizing: border-box;
+        }
+        th, td { border: 1px solid #333; padding: 5px; }
+        button { margin: 5px; padding: 8px 12px; }
+        .indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .indicator-on { background-color: lime; }
+        .indicator-off { background-color: #444; }
+        .indicator-fault { background-color: red; }
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 0 auto 15px;
+            width: 100%;
+            max-width: 600px;  /* match the table width */
+            box-sizing: border-box;
+        }
+
+        .text-button {
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 6px 10px;
+            color: #0a84ff;  /* iOS blue */
+            display: flex;
+            align-items: center;
+        }
+
+        .text-button:focus {
+            outline: none;
+        }
+
+        .text-button:hover {
+            opacity: 0.7;
+        }
+
+        .back-button .chevron {
+            font-size: 18px;
+            margin-right: 4px;
+        }
+
+        .delete-button {
+            color: #ff3b30;  /* iOS red */
+        }
+        .trash-button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .trash-button:focus {
+            outline: none;
+        }
+
+        .trash-icon {
+            width: 20px;
+            height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>All Logs</h1>
+        <div class="button-row">
+            <button class="text-button back-button" onclick="window.location='/'">
+                <span class="chevron">‹</span> Back
+            </button>
+            <button class="text-button" onclick="window.location='/api/download/logs.json'">
+                Download Logs
+            </button>
+            <button class="text-button delete-button" onclick="deleteAllLogs()">
+                Delete All Logs
+            </button>
+        </div>
+        <table id="all-logs">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Ago</th>
+                    <th>Event</th>
+                    <th>State</th>
+                    <th>Duration</th>
+                    <th>Delete</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <script>
+    async function fetchAllLogs() {
+        const res = await fetch('/api/download_logs');
+        const text = await res.text();
+
+        const logs = text.trim().split('\\n')
+            .filter(line => line.trim().length > 0)
+            .map(line => {
+                try {
+                    return JSON.parse(line);
+                } catch (err) {
+                    console.error('Invalid JSON line:', line, err);
+                    return null;
+                }
+            })
+            .filter(log => log !== null);
+
+        const tbody = document.querySelector('#all-logs tbody');
+        tbody.innerHTML = '';
+        logs.reverse().forEach((log, index) => {
+            tbody.innerHTML += `<tr>
+                <td>${log.timestamp}</td>
+                <td>${timeAgo(log.timestamp)}</td>
+                <td>${formatEventName(log.event)}</td>
+                <td><span class="indicator ${getIndicatorClass(log.event, log.state)}"></span></td>
+                <td>${formatDuration(log.duration)}</td>
+                <td>
+                    <button class="trash-button" onclick="deleteLog(${logs.length - index - 1})">
+                        <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="20" height="20" viewBox="0,0,256,256">
+<g fill="#ff0000" fill-rule="nonzero" stroke="none" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10" stroke-dasharray="" stroke-dashoffset="0" font-family="none" font-weight="none" font-size="none" text-anchor="none" style="mix-blend-mode: normal"><g transform="scale(5.12,5.12)"><path d="M42,5h-10v-2c0,-1.65234 -1.34766,-3 -3,-3h-8c-1.65234,0 -3,1.34766 -3,3v2h-10c-0.55078,0 -1,0.44922 -1,1c0,0.55078 0.44922,1 1,1h1.08594l3.60938,40.51563c0.125,1.39063 1.30859,2.48438 2.69531,2.48438h19.21484c1.38672,0 2.57031,-1.09375 2.69531,-2.48437l3.61328,-40.51562h1.08594c0.55469,0 1,-0.44922 1,-1c0,-0.55078 -0.44531,-1 -1,-1zM20,44c0,0.55469 -0.44922,1 -1,1c-0.55078,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44922,-1 1,-1c0.55078,0 1,0.44922 1,1zM20,3c0,-0.55078 0.44922,-1 1,-1h8c0.55078,0 1,0.44922 1,1v2h-10zM26,44c0,0.55469 -0.44922,1 -1,1c-0.55078,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44922,-1 1,-1c0.55078,0 1,0.44922 1,1zM32,44c0,0.55469 -0.44531,1 -1,1c-0.55469,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44531,-1 1,-1c0.55469,0 1,0.44922 1,1z"></path></g></g>
+</svg>
+                    </button>
+                </td>
+            </tr>`;
+        });
+    }
+
+    async function deleteLog(index) {
+        if (!confirm('Delete this log entry?')) return;
+        await fetch('/api/delete_log/' + index, { method: 'POST' });
+        fetchAllLogs();
+    }
+
+    async function deleteAllLogs() {
+        if (!confirm('Delete ALL logs?')) return;
+        await fetch('/api/delete_all_logs', { method: 'POST' });
+        fetchAllLogs();
+    }
+
+    fetchAllLogs();
+    </script>
+</body>
+</html>

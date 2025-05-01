@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background: #111; color: white; font-family: sans-serif; margin: 0; padding: 0; }
+        .container { width: 90%; max-width: 400px; margin: auto; padding: 20px 0; }
+        .header-container { position: relative; margin-bottom: 20px; }
+        .header-container h1 { margin: 0; text-align: center; font-size: 24px; }
+        .header-container .back { position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            background: none; color: #4da6ff; font-size: 16px; border: none; cursor: pointer; }
+        label { display: block; text-align: left; margin-bottom: 5px; font-size: 14px; }
+        input[type="text"] { width: 100%; padding: 10px; border-radius: 6px; border: none; margin-bottom: 15px;
+            box-sizing: border-box; font-size: 16px; }
+        button { padding: 12px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; }
+        .save { background-color: #333; color: white; width: 100%; margin-bottom: 20px; }
+        .shutdown { background-color: #ff4d4d; color: white; margin-bottom: 10px; }
+        .reboot { background-color: #4da6ff; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <button class="back" onclick="window.location='/'"><span class="chevron">‹</span> Back</button>
+            <h1>Settings</h1>
+        </div>
+        <label for="ups-name">UPS Name:</label>
+        <input type="text" id="ups-name" value="{{ settings.get('ups_name', '') }}" placeholder="Enter UPS name">
+        <label for="webhook-on-battery">On Battery Webhook:</label>
+        <input type="text" id="webhook-on-battery" value="{{ settings.get('webhooks', {}).get('on_battery') or '' }}" placeholder="Enter On Battery Webhook">
+        <label for="webhook-low-battery">Low Battery Webhook:</label>
+        <input type="text" id="webhook-low-battery" value="{{ settings.get('webhooks', {}).get('low_battery') or '' }}" placeholder="Enter Low Battery Webhook">
+        <label for="webhook-ups-fault">UPS Fault Webhook:</label>
+        <input type="text" id="webhook-ups-fault" value="{{ settings.get('webhooks', {}).get('ups_fault') or '' }}" placeholder="Enter UPS Fault Webhook">
+
+        <button class="save" onclick="saveSettings()">Save All</button>
+
+        <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
+        <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
+    </div>
+
+    <script>
+    function confirmAction(url, message) {
+        if (confirm('Are you sure you want to ' + message)) {
+            fetch(url, { method: 'POST' })
+                .then(() => alert('Command sent!'))
+                .catch(() => alert('Failed to send command.'));
+        }
+    }
+
+    function saveSettings() {
+        const payload = {
+            ups_name: document.getElementById('ups-name').value,
+            webhooks: {
+                on_battery: document.getElementById('webhook-on-battery').value,
+                low_battery: document.getElementById('webhook-low-battery').value,
+                ups_fault: document.getElementById('webhook-ups-fault').value
+            }
+        };
+        fetch('/api/save_settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(() => alert('Settings saved!'))
+        .catch(() => alert('Failed to save settings.'));
+    }
+    </script>
+</body>
+</html>
