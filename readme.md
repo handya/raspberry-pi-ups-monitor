@@ -37,6 +37,8 @@ The app provides:
 
 ---
 
+<img width="745" alt="Screenshot 2025-05-02 at 10 16 31" src="https://github.com/user-attachments/assets/d6874fce-9755-448a-9081-e8f0a9b7de19" />
+
 ## Installation
 
 1. **Update your Pi:**
