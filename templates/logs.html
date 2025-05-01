@@ -110,22 +110,10 @@
         </table>
     </div>
     <script>
+
     async function fetchAllLogs() {
-        const res = await fetch('/api/download_logs');
-        const text = await res.text();
-
-        const logs = text.trim().split('\\n')
-            .filter(line => line.trim().length > 0)
-            .map(line => {
-                try {
-                    return JSON.parse(line);
-                } catch (err) {
-                    console.error('Invalid JSON line:', line, err);
-                    return null;
-                }
-            })
-            .filter(log => log !== null);
-
+        const res = await fetch('/api/logs');
+        const logs = await res.json();
         const tbody = document.querySelector('#all-logs tbody');
         tbody.innerHTML = '';
         logs.reverse().forEach((log, index) => {

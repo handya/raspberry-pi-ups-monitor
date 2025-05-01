@@ -294,9 +294,23 @@ def api_status():
 
     return jsonify(status)
 
-@app.route('/api/download_logs')
-def api_view_logs():
-    return send_file(LOG_FILE, as_attachment=True)
+@app.route('/api/logs')
+def api_logs():
+    event_filter = flask_request.args.get('event')
+    logs = []
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if event_filter and entry['event'] != event_filter:
+                        continue
+                    logs.append(entry)
+                except json.JSONDecodeError:
+                    continue
+    return jsonify(logs)
 
 @app.route('/api/download/logs.json')
 def api_download_logs():
