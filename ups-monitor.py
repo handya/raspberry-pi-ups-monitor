@@ -14,9 +14,13 @@ shutdown_timer = None
 
 app = Flask(__name__)
 
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log.jsonl')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
+LOG_FILE = os.path.join(BASE_DIR, 'log.jsonl')
+
 log_buffer = deque(maxlen=1000)
 event_start_times = {}
+settings = {}
 
 # Load previous logs into memory
 if os.path.exists(LOG_FILE):
@@ -133,8 +137,11 @@ HTML_TEMPLATE = """
         }
         th, td { border: 1px solid #333; padding: 5px; }
         .container {
-            padding: 10px;
+            padding-top: 10px;
             box-sizing: border-box;
+            position: relative;
+            max-width: 600px;
+            margin: auto;
         }
         .see-all-btn {
             background: none;
@@ -155,10 +162,36 @@ HTML_TEMPLATE = """
             font-size: 18px;
             margin-left: 4px;
         }
+        
+        .settings-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .settings-button svg {
+            width: 32px;
+            height: 32px;
+            fill: #339af0;
+        }
+
+        .settings-button:hover svg {
+            fill: #66bfff;
+        }
     </style>
 </head>
 <body>
 <div class="container">
+        <button class="settings-button" onclick="window.location='/settings'">
+    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="48" height="48" viewBox="0,0,256,256">
+    <g fill="#339af0" fill-rule="nonzero" stroke="none" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10" stroke-dasharray="" stroke-dashoffset="0" font-family="none" font-weight="none" font-size="none" text-anchor="none" style="mix-blend-mode: normal"><g transform="scale(4,4)"><path d="M32,9c-0.585,0 -1.09919,0.4007 -1.24219,0.9707l-0.52734,2.11133c-1.15735,0.10153 -2.27875,0.31915 -3.37109,0.60938l-1.22656,-1.81836c-0.329,-0.487 -0.94805,-0.68633 -1.49805,-0.48633c-0.55,0.201 -0.89694,0.75289 -0.83594,1.33789l0.22656,2.17969c-1.03908,0.48754 -2.03271,1.05138 -2.96484,1.70313l-1.76953,-1.2832c-0.475,-0.345 -1.12622,-0.31936 -1.57422,0.05664c-0.448,0.376 -0.58513,1.01302 -0.32812,1.54102l0.95117,1.95508c-0.80695,0.80906 -1.53374,1.6958 -2.19336,2.63281l-2.10351,-0.60156c-0.565,-0.162 -1.16989,0.0848 -1.46289,0.5918c-0.293,0.507 -0.2023,1.15155 0.2207,1.56055l1.57422,1.52344c-0.47782,1.02714 -0.86842,2.10002 -1.16797,3.21289l-2.1875,0.1543c-0.586,0.041 -1.06892,0.48064 -1.16992,1.05664c-0.101,0.576 0.20323,1.15162 0.74023,1.39063l1.98828,0.88867c-0.04797,0.56511 -0.07812,1.13536 -0.07812,1.71289c0,0.57819 0.03004,1.1491 0.07813,1.71484l-1.98828,0.88672c-0.537,0.239 -0.84123,0.81658 -0.74023,1.39258c0.101,0.576 0.58587,1.01369 1.17187,1.05469l2.18555,0.1543c0.29939,1.11229 0.69048,2.18428 1.16797,3.21094l-1.57422,1.52344c-0.423,0.408 -0.5127,1.05355 -0.2207,1.56055c0.292,0.507 0.89789,0.7538 1.46289,0.5918l2.10156,-0.60156c0.66002,0.93785 1.38772,1.82506 2.19531,2.63477l-0.95117,1.95313c-0.258,0.529 -0.11988,1.16502 0.32813,1.54102c0.448,0.377 1.09822,0.40164 1.57422,0.05664l1.76758,-1.2832c0.93279,0.65239 1.92689,1.21714 2.9668,1.70508l-0.22656,2.17969c-0.061,0.585 0.28594,1.13789 0.83594,1.33789c0.55,0.2 1.171,0.00067 1.5,-0.48633l1.22656,-1.81836c1.09178,0.28997 2.21243,0.5079 3.36914,0.60938l0.52734,2.11133c0.143,0.57 0.65719,0.9707 1.24219,0.9707c0.585,0 1.09919,-0.4007 1.24219,-0.9707l0.52734,-2.11133c1.15671,-0.10148 2.27736,-0.31941 3.36914,-0.60937l1.22656,1.81836c0.329,0.487 0.95,0.68633 1.5,0.48633c0.55,-0.201 0.89694,-0.75289 0.83594,-1.33789l-0.22656,-2.17969c1.0386,-0.48732 2.03113,-1.05175 2.96289,-1.70312l1.76953,1.2832c0.475,0.345 1.12817,0.31936 1.57617,-0.05664c0.448,-0.376 0.58512,-1.01302 0.32813,-1.54102l-0.95117,-1.95508c0.80695,-0.80906 1.53374,-1.6958 2.19336,-2.63281l2.10352,0.60156c0.565,0.162 1.16989,-0.0848 1.46289,-0.5918c0.293,-0.507 0.2023,-1.15155 -0.2207,-1.56055l-1.57422,-1.52344c0.47782,-1.02714 0.86842,-2.10002 1.16797,-3.21289l2.1875,-0.1543c0.586,-0.041 1.06792,-0.47869 1.16992,-1.05469c0.101,-0.576 -0.20323,-1.15358 -0.74023,-1.39258l-1.98828,-0.88672c0.04808,-0.56574 0.07813,-1.13665 0.07813,-1.71484c0,-0.57819 -0.03004,-1.1491 -0.07812,-1.71484l1.98633,-0.88672c0.537,-0.239 0.84223,-0.81658 0.74023,-1.39258c-0.101,-0.576 -0.58392,-1.01369 -1.16992,-1.05469l-2.18555,-0.1543c-0.29962,-1.11315 -0.69194,-2.18552 -1.16992,-3.21289l1.57617,-1.52344c0.423,-0.408 0.51175,-1.05355 0.21875,-1.56055c-0.292,-0.507 -0.89594,-0.7538 -1.46094,-0.5918l-2.10352,0.60156c-0.65962,-0.93701 -1.38641,-1.82375 -2.19336,-2.63281l0.95117,-1.95312c0.258,-0.529 0.11988,-1.16502 -0.32812,-1.54102c-0.448,-0.377 -1.10017,-0.40164 -1.57617,-0.05664l-1.76758,1.2832c-0.93241,-0.65202 -1.92541,-1.21737 -2.96484,-1.70508l0.22656,-2.17969c0.061,-0.585 -0.28594,-1.13789 -0.83594,-1.33789c-0.55,-0.2 -1.171,-0.00067 -1.5,0.48633l-1.22656,1.81836c-1.09178,-0.28997 -2.21243,-0.5079 -3.36914,-0.60937l-0.52734,-2.11133c-0.143,-0.57 -0.65719,-0.9707 -1.24219,-0.9707zM30,16.13672v10.21094c-2.32934,0.82421 -4,3.04047 -4,5.65234c0,0.37417 0.038,0.73855 0.10352,1.09375l-8.85352,5.11328c-0.80402,-1.90863 -1.25,-4.00584 -1.25,-6.20703c0,-8.15837 6.10888,-14.87749 14,-15.86328zM34,16.13672c7.89112,0.98579 14,7.70492 14,15.86328c0,2.20119 -0.44598,4.2984 -1.25,6.20703l-8.85352,-5.11328c0.06552,-0.3552 0.10352,-0.71958 0.10352,-1.09375c0,-2.61187 -1.67066,-4.82814 -4,-5.65234zM32,30c1.105,0 2,0.895 2,2c0,1.105 -0.895,2 -2,2c-1.105,0 -2,-0.895 -2,-2c0,-1.105 0.895,-2 2,-2zM28.10352,36.55859c1.04867,0.89741 2.40786,1.44141 3.89648,1.44141c1.48863,0 2.84781,-0.544 3.89648,-1.44141l8.83594,5.10156c-2.92211,3.84546 -7.52975,6.33984 -12.73242,6.33984c-5.20267,0 -9.81031,-2.49439 -12.73242,-6.33984z"></path></g></g>
+    </svg>
+    </button>
+
     <div id="disconnect-overlay" style="
         position: fixed;
         top: 0;
@@ -409,6 +442,14 @@ def shutdown_pi():
     log_event('low_battery_shutdown', True) 
     os.system('sudo shutdown -h now')
 
+def load_settings():
+    global settings
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE) as f:
+            settings = json.load(f)
+    else:
+        settings = {}
+
 def log_event(event_type, state, duration=None):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     entry = {
@@ -511,7 +552,7 @@ def index():
             for k, v in timer_start.items()
         }
         recent_logs = list(log_buffer)[-10:]
-    return render_template_string(HTML_TEMPLATE, states=state_copy, timers=timers, recent_logs=recent_logs)
+    return render_template_string(HTML_TEMPLATE, states=state_copy, timers=timers, recent_logs=recent_logs, settings=settings)
 
 @app.route('/logs')
 def view_logs():
@@ -682,6 +723,78 @@ def view_logs():
     </html>
     """
 
+@app.route('/settings')
+def settings_page():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Settings</title>
+        <style>
+            body { background: #111; color: white; text-align: center; font-family: sans-serif; }
+            .button-row {
+                margin: 20px auto;
+                max-width: 300px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+            button {
+                padding: 12px;
+                font-size: 16px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            .shutdown { background-color: #ff4d4d; color: white; }
+            .reboot { background-color: #4da6ff; color: white; }
+            .back { background: none; color: #4da6ff; font-size: 14px; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>Settings</h1>
+         <button class="back" onclick="window.location='/'">&lt; Back</button>
+
+         <div style="margin: 20px auto; max-width: 300px;">
+            <label for="ups-name">UPS Name:</label><br>
+            <input type="text" id="ups-name" value="{{ settings.ups_name }}" style="width: 100%; padding: 8px; margin-top: 5px;" placeholder="Enter UPS name">
+            <button style="margin-top: 10px; padding: 10px;" onclick="saveUPSName()">Save Name</button>
+        </div>
+
+        <div class="button-row">
+            <button class="shutdown" onclick="confirmAction('/api/shutdown', 'Shutdown the Raspberry Pi?')">Shutdown</button>
+            <button class="reboot" onclick="confirmAction('/api/reboot', 'Reboot the Raspberry Pi?')">Reboot</button>
+        </div>
+
+        <script>
+        function confirmAction(url, message) {
+            if (confirm('Are you sure you want to ' + message)) {
+                fetch(url, { method: 'POST' })
+                    .then(() => alert('Command sent!'))
+                    .catch(() => alert('Failed to send command.'));
+            }
+        }
+
+        function saveUPSName() {
+            const name = document.getElementById('ups-name').value;
+            if (name.trim() === '') {
+                alert('Please enter a UPS name.');
+                return;
+            }
+            fetch('/api/set_ups_name', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            })
+            .then(() => alert('UPS name saved!'))
+            .catch(() => alert('Failed to save UPS name.'));
+        }
+
+        </script>
+    </body>
+    </html>
+    """, settings=settings)
+
 @app.route('/api/delete_all_logs', methods=['POST'])
 def delete_all_logs():
     open(LOG_FILE, 'w').close()  # clear file
@@ -701,6 +814,34 @@ def delete_log(index):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown():
+    log_event('manual_shutdown', True)  
+    os.system('sudo shutdown -h now')
+    return '', 204
+
+@app.route('/api/reboot', methods=['POST'])
+def reboot():
+    log_event('manual_reboot', True)  
+    os.system('sudo reboot')
+    return '', 204
+
+@app.route('/api/set_ups_name', methods=['POST'])
+def set_ups_name():
+    global settings
+    data = flask_request.get_json()
+    ups_name = data.get('name')
+    if not ups_name:
+        return 'Invalid name', 400
+
+    settings['ups_name'] = ups_name
+
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(settings, f)
+
+    return '', 204
+
 
 @app.route('/api/status')
 def api_status():
@@ -751,6 +892,8 @@ def simulate():
 
 if __name__ == '__main__':
     os.makedirs("static", exist_ok=True)
+
+    load_settings()
 
     # Turn off fault LED (script running OK)
     ups_fault_led.off()
