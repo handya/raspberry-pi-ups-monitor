@@ -14,7 +14,7 @@ shutdown_timer = None
 
 app = Flask(__name__)
 
-LOG_FILE = "log.jsonl"
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log.jsonl')
 log_buffer = deque(maxlen=100)
 event_start_times = {}
 
@@ -48,9 +48,9 @@ previous_state = current_state.copy()
 state_lock = threading.Lock()
 
 WEBHOOKS = {
-    "on_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_on_battery",
-    "low_battery": "http://{{your home assitant IP}}:8123/api/webhook/ups_low_battery",
-    "ups_fault": "http://{{your home assitant IP}}:8123/api/webhook/ups_fault",
+    "on_battery": "http://10.1.1.60:8123/api/webhook/ups_on_battery",
+    "low_battery": "http://10.1.1.60:8123/api/webhook/ups_low_battery",
+    "ups_fault": "http://10.1.1.60:8123/api/webhook/ups_fault",
 }
 
 timer_start = {
@@ -63,6 +63,8 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <title>UPS Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/static/shared.js"></script>
     <style>
         body { font-family: sans-serif; background: #111; color: white; text-align: center; }
         .status { 
@@ -76,7 +78,11 @@ HTML_TEMPLATE = """
         .on { fill: lime; stroke: lime; }
         .off { fill: #444; stroke: #444; }
         .flow-line { stroke-width: 3; stroke-dasharray: 6,4; fill: none; }
-        svg { margin-top: 40px; }
+        svg {
+            width: 100%;  /* scale SVG to container */
+            max-width: 500px; /* cap max size on desktop */
+            height: auto;
+        }
         .bell {
             position: absolute;
             width: 30px;
@@ -88,9 +94,16 @@ HTML_TEMPLATE = """
         }
         .status-line {
             display: flex;
-            width: 150px;
+            width: 120px;
             align-items: center;
             justify-content: left;
+            margin: 5px 0;
+        }
+        .time-line {
+            display: flex;
+            width: 300px;
+            align-items: center;
+            justify-content: center;
             margin: 5px 0;
         }
         .indicator {
@@ -110,11 +123,42 @@ HTML_TEMPLATE = """
         .indicator-fault {
             background-color: red;
         }
-        table { margin: auto; width: 500px; background: #222; border-collapse: collapse; }
+        table { 
+            margin: auto; 
+            width: 100%;  /* changed from 500px to 100% */
+            max-width: 600px; /* keep it nice on desktop */
+            background: #222; 
+            border-collapse: collapse; 
+            box-sizing: border-box; 
+        }
         th, td { border: 1px solid #333; padding: 5px; }
+        .container {
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .see-all-btn {
+            background: none;
+            border: none;
+            color: #0a84ff;  /* iOS blue */
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .see-all-btn:focus {
+            outline: none;
+        }
+
+        .chevron {
+            font-size: 18px;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
+<div class="container">
     <div id="disconnect-overlay" style="
         position: fixed;
         top: 0;
@@ -185,9 +229,16 @@ HTML_TEMPLATE = """
     <div class="status" id="status-text">
         Loading...
     </div>
+    <div class="status" id="time-text">
+        Loading...
+    </div>
 
-    <h3>Recent Logs</h3>
-    <button style="margin-bottom: 15px;" onclick="window.location='/logs'">See All Logs</button>
+    <h3 style="display: flex; justify-content: space-between; align-items: center; margin: auto; width: 100%; max-width: 600px; padding-bottom: 16px; padding-top: 32px;">
+        Recent Logs
+        <button class="see-all-btn" onclick="window.location='/logs'">
+            See All Logs <span class="chevron">›</span>
+        </button>
+    </h3>
     <table>
         <thead><tr><th>Time</th><th>Ago</th><th>Event</th><th>State</th><th>Duration</th></tr></thead>
         <tbody>
@@ -224,34 +275,6 @@ HTML_TEMPLATE = """
                 console.error('Failed to fetch status', err);
                 errorText.style.display = 'block';
             }
-        }
-
-        function timeAgo(timestamp) {
-            const now = new Date();
-            const time = new Date(timestamp);
-            const diffMs = now - time;
-            const diffSec = Math.floor(diffMs / 1000);
-            const diffMin = Math.floor(diffSec / 60);
-            const diffHr = Math.floor(diffMin / 60);
-            const diffDay = Math.floor(diffHr / 24);
-
-            if (diffSec < 60) return `${diffSec}s ago`;
-            if (diffMin < 60) return `${diffMin}m ago`;
-            if (diffHr < 24) return `${diffHr}h ago`;
-            return `${diffDay}d ago`;
-        }
-
-        function formatEventName(name) {
-            const SPECIAL_WORDS = ['UPS', 'API', 'CPU'];  // add more as needed
-            return name.split('_')
-                .map(word => {
-                    const upper = word.toUpperCase();
-                    if (SPECIAL_WORDS.includes(upper)) {
-                        return upper;
-                    }
-                    return word.charAt(0).toUpperCase() + word.slice(1);
-                })
-                .join(' ');
         }
 
         function updateDisplay(states) {
@@ -325,10 +348,15 @@ HTML_TEMPLATE = """
                 <div class="status-line"><span class="indicator ${states.low_battery ? 'indicator-fault' : 'indicator-off'}"></span>Low Battery</div>
                 <div class="status-line"><span class="indicator ${states.on_bypass ? 'indicator-fault' : 'indicator-off'}"></span>On Bypass</div>
                 <div class="status-line"><span class="indicator ${states.alarm ? 'indicator-fault' : 'indicator-off'}"></span>Alarm</div>
-                <div class="status-line">${states.battery_runtime}&nbsp;<b>Battery Runtime:</b></div>
-                <div class="status-line">${states.low_battery_duration}&nbsp;<b>Low Battery Duration:</b></div>
             `;
             document.getElementById('status-text').innerHTML = statusText;
+
+            const timeText = `
+                <div class="time-line">Battery Runtime:&nbsp;${states.battery_runtime}</div>
+                <div class="time-line">Low Battery Duration:&nbsp;${states.low_battery_duration}</div>
+                <div class="time-line">System Uptime:&nbsp;${states.system_uptime}</div>
+            `;
+            document.getElementById('time-text').innerHTML = timeText;
 
             if (states.recent_logs && Array.isArray(states.recent_logs)) {
                 const tableBody = document.querySelector('table tbody');
@@ -340,8 +368,8 @@ HTML_TEMPLATE = """
                         <td>${log.timestamp}</td>
                         <td>${timeAgo(log.timestamp)}</td>
                         <td>${formatEventName(log.event)}</td>
-                        <td><span class="indicator ${log.state === 'ON' ? 'indicator-on' : 'indicator-fault'}"></span></td>
-                        <td>${log.duration || ''}</td>
+                       <td><span class="indicator ${getIndicatorClass(log.event, log.state)}"></span></td>
+                        <td>${formatDuration(log.duration)}</td>
                     </tr>`;
                     tableBody.innerHTML += row;
                 });
@@ -351,6 +379,7 @@ HTML_TEMPLATE = """
         setInterval(fetchStatus, 2000);
         fetchStatus();
     </script>
+</div>
 </body>
 </html>
 """
@@ -390,6 +419,15 @@ def log_event(event_type, state, duration=None):
     log_buffer.append(entry)
     with open(LOG_FILE, "a") as f:
         f.write(json.dumps(entry) + "\n")
+
+def get_system_uptime():
+    try:
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+        return uptime_seconds
+    except Exception as e:
+        print(f"Error reading uptime: {e}")
+        return 0
 
 def monitor_inputs():
     global current_state, previous_state, timer_start, shutdown_timer
@@ -456,82 +494,129 @@ def view_logs():
     <html>
     <head>
         <title>All Logs</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="/static/shared.js"></script>
         <style>
-            body { background: #111; color: white; text-align: center; font-family: sans-serif; }
-            table { margin: auto; width: 600px; background: #222; border-collapse: collapse;}
+            body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
+            .container { padding: 10px; box-sizing: border-box; }
+            table { 
+                margin: auto; 
+                width: 100%; 
+                max-width: 600px; 
+                background: #222; 
+                border-collapse: collapse; 
+                box-sizing: border-box;
+            }
             th, td { border: 1px solid #333; padding: 5px; }
+            button { margin: 5px; padding: 8px 12px; }
             .indicator {
                 width: 15px;
                 height: 15px;
                 border-radius: 50%;
-                margin-right: 8px;
-                flex-shrink: 0;
                 display: inline-block;
             }
-            .indicator-on {
-                background-color: lime;
+            .indicator-on { background-color: lime; }
+            .indicator-off { background-color: #444; }
+            .indicator-fault { background-color: red; }
+            .button-row {
+                display: flex;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin: 0 auto 15px;
+                width: 100%;
+                max-width: 600px;  /* match the table width */
+                box-sizing: border-box;
             }
-            .indicator-off {
-                background-color: #444;
+
+            .text-button {
+                background: none;
+                border: none;
+                font-size: 16px;
+                cursor: pointer;
+                padding: 6px 10px;
+                color: #0a84ff;  /* iOS blue */
+                display: flex;
+                align-items: center;
             }
-            .indicator-fault {
-                background-color: red;
+
+            .text-button:focus {
+                outline: none;
+            }
+
+            .text-button:hover {
+                opacity: 0.7;
+            }
+
+            .back-button .chevron {
+                font-size: 18px;
+                margin-right: 4px;
+            }
+
+            .delete-button {
+                color: #ff3b30;  /* iOS red */
+            }
+            .trash-button {
+                background: none;
+                border: none;
+                cursor: pointer;
+                padding: 4px;
+            }
+
+            .trash-button:focus {
+                outline: none;
+            }
+
+            .trash-icon {
+                width: 20px;
+                height: 20px;
             }
         </style>
     </head>
     <body>
-        <h1>All Logs</h1>
-        <button style="margin-bottom: 15px;" onclick="window.location='/'">Back</button>
-        <button style="margin-bottom: 15px;" onclick="window.location='/api/download_logs'">Download Logs</button>
-        <button style="margin-bottom: 15px;" onclick="deleteAllLogs()">Delete All Logs</button>
-        <table id="all-logs">
-            <thead><tr><th>Time</th><th>Ago</th><th>Event</th><th>State</th><th>Duration</th><th>Delete</th></tr></thead>
-            <tbody></tbody>
-        </table>
+        <div class="container">
+            <h1>All Logs</h1>
+            <div class="button-row">
+                <button class="text-button back-button" onclick="window.location='/'">
+                    <span class="chevron">‹</span> Back
+                </button>
+                <button class="text-button" onclick="window.location='/api/download_logs'">
+                    Download Logs
+                </button>
+                <button class="text-button delete-button" onclick="deleteAllLogs()">
+                    Delete All Logs
+                </button>
+            </div>
+            <table id="all-logs">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Ago</th>
+                        <th>Event</th>
+                        <th>State</th>
+                        <th>Duration</th>
+                        <th>Delete</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
         <script>
-        function timeAgo(timestamp) {
-            const now = new Date();
-            const time = new Date(timestamp);
-            const diffMs = now - time;
-            const diffSec = Math.floor(diffMs / 1000);
-            const diffMin = Math.floor(diffSec / 60);
-            const diffHr = Math.floor(diffMin / 60);
-            const diffDay = Math.floor(diffHr / 24);
-
-            if (diffSec < 60) return `${diffSec}s ago`;
-            if (diffMin < 60) return `${diffMin}m ago`;
-            if (diffHr < 24) return `${diffHr}h ago`;
-            return `${diffDay}d ago`;
-        }
-
-        function formatEventName(name) {
-            const SPECIAL_WORDS = ['UPS', 'API', 'CPU'];  // add more as needed
-            return name.split('_')
-                .map(word => {
-                    const upper = word.toUpperCase();
-                    if (SPECIAL_WORDS.includes(upper)) {
-                        return upper;
-                    }
-                    return word.charAt(0).toUpperCase() + word.slice(1);
-                })
-                .join(' ');
-        }
-
         async function fetchAllLogs() {
             const res = await fetch('/api/download_logs');
             const text = await res.text();
-            
+
             const logs = text.trim().split('\\n')
-            .filter(line => line.trim().length > 0)  // skip empty lines
-            .map(line => {
-                try {
-                    return JSON.parse(line);
-                } catch (err) {
-                    console.error('Invalid JSON line:', line, err);
-                    return null;
-                }
-            })
-            .filter(log => log !== null);  // remove failed parses
+                .filter(line => line.trim().length > 0)
+                .map(line => {
+                    try {
+                        return JSON.parse(line);
+                    } catch (err) {
+                        console.error('Invalid JSON line:', line, err);
+                        return null;
+                    }
+                })
+                .filter(log => log !== null);
 
             const tbody = document.querySelector('#all-logs tbody');
             tbody.innerHTML = '';
@@ -540,9 +625,15 @@ def view_logs():
                     <td>${log.timestamp}</td>
                     <td>${timeAgo(log.timestamp)}</td>
                     <td>${formatEventName(log.event)}</td>
-                    <td><span class="indicator ${log.state === 'ON' ? 'indicator-on' : 'indicator-fault'}"></span></td>
-                    <td>${log.duration || ''}</td>
-                    <td><button onclick="deleteLog(${logs.length - index - 1})">X</button></td>
+                    <td><span class="indicator ${getIndicatorClass(log.event, log.state)}"></span></td>
+                    <td>${formatDuration(log.duration)}</td>
+                    <td>
+                        <button class="trash-button" onclick="deleteLog(${logs.length - index - 1})">
+                            <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="20" height="20" viewBox="0,0,256,256">
+<g fill="#ff0000" fill-rule="nonzero" stroke="none" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10" stroke-dasharray="" stroke-dashoffset="0" font-family="none" font-weight="none" font-size="none" text-anchor="none" style="mix-blend-mode: normal"><g transform="scale(5.12,5.12)"><path d="M42,5h-10v-2c0,-1.65234 -1.34766,-3 -3,-3h-8c-1.65234,0 -3,1.34766 -3,3v2h-10c-0.55078,0 -1,0.44922 -1,1c0,0.55078 0.44922,1 1,1h1.08594l3.60938,40.51563c0.125,1.39063 1.30859,2.48438 2.69531,2.48438h19.21484c1.38672,0 2.57031,-1.09375 2.69531,-2.48437l3.61328,-40.51562h1.08594c0.55469,0 1,-0.44922 1,-1c0,-0.55078 -0.44531,-1 -1,-1zM20,44c0,0.55469 -0.44922,1 -1,1c-0.55078,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44922,-1 1,-1c0.55078,0 1,0.44922 1,1zM20,3c0,-0.55078 0.44922,-1 1,-1h8c0.55078,0 1,0.44922 1,1v2h-10zM26,44c0,0.55469 -0.44922,1 -1,1c-0.55078,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44922,-1 1,-1c0.55078,0 1,0.44922 1,1zM32,44c0,0.55469 -0.44531,1 -1,1c-0.55469,0 -1,-0.44531 -1,-1v-33c0,-0.55078 0.44531,-1 1,-1c0.55469,0 1,0.44922 1,1z"></path></g></g>
+</svg>
+                        </button>
+                    </td>
                 </tr>`;
             });
         }
@@ -601,6 +692,10 @@ def api_status():
 
         status["low_battery_duration"] = format_duration(low_battery_duration_seconds)
         status["low_battery_duration_seconds"] = low_battery_duration_seconds
+
+        uptime_seconds = get_system_uptime()
+        status["system_uptime"] = format_duration(uptime_seconds)
+        status["system_uptime_seconds"] = int(uptime_seconds)
 
         status["recent_logs"] = list(log_buffer)[-10:]
 
