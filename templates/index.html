@@ -275,9 +275,23 @@
             } else {
                 document.getElementById('battery-inverter').setAttribute('stroke', 'lime');
                 document.getElementById('inverter-load').setAttribute('stroke', '#444');
-                document.getElementById('bypass-line').setAttribute('stroke', states.on_bypass ? 'lime' : 'none');
-                document.getElementById('on-line-bypass').setAttribute('stroke', states.on_ups ? 'lime' : 'none');
-                document.getElementById('mains-inverter').setAttribute('stroke', '#444');
+                const upsType = "{{ settings.get('ups_type', '') }}";
+                switch (upsType) {
+                    case 'online':
+                        document.getElementById('bypass-line').setAttribute('stroke', 'none');
+                        document.getElementById('on-line-bypass').setAttribute('stroke', 'none');
+                        document.getElementById('mains-inverter').setAttribute('stroke', states.on_ups ? 'lime' : '#444');
+                        document.getElementById('inverter-load').setAttribute('stroke', states.on_ups ? 'lime' : '#444');
+                        document.getElementById('bypass-line').setAttribute('stroke', states.on_bypass ? 'lime' : 'none');
+                        break;
+                    case 'line_interactive':
+                        document.getElementById('bypass-line').setAttribute('stroke', states.on_bypass ? 'lime' : 'none');
+                        document.getElementById('on-line-bypass').setAttribute('stroke', states.on_ups ? 'lime' : 'none');
+                        document.getElementById('mains-inverter').setAttribute('stroke', '#444');
+                        break;
+                    default:
+                        break;
+                }
                 document.getElementById('battery-inverter').setAttribute('stroke', '#444');
                 document.getElementById('battery').setAttribute('class', states.ups_fault ? 'off' : 'on');
             }

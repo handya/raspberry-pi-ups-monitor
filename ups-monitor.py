@@ -248,6 +248,9 @@ def save_settings():
     # Update ups_name
     settings['ups_name'] = data.get('ups_name', '')
 
+    # Update ups_type
+    settings['ups_type'] = data.get('ups_type', '')
+
     # Ensure webhooks section exists
     if 'webhooks' not in settings:
         settings['webhooks'] = {}
