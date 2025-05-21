@@ -46,6 +46,15 @@ UPS_SIGNALS = {
     "ups_connected": DigitalInputDevice(15),
 }
 
+REVERSED_INPUTS = {
+    "on_ups",
+    "on_battery",
+    "ups_fault",
+    "low_battery",
+    "on_bypass",
+    "alarm"
+}
+
 # Initial state
 current_state = {name: False for name in UPS_SIGNALS}
 previous_state = current_state.copy()
@@ -68,7 +77,10 @@ def read_ups_state():
     if TEST_MODE:
         return current_state.copy()
     else:
-        return {name: device.value == 1 for name, device in UPS_SIGNALS.items()}
+        return {
+            name: (device.value == 0 if name in REVERSED_INPUTS else device.value == 1)
+            for name, device in UPS_SIGNALS.items()
+        }
 
 def send_webhook(event):
     webhook_url = settings.get('webhooks', {}).get(event)
