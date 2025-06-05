@@ -3,7 +3,10 @@
 A lightweight Flask web app to monitor UPS relay signals from a Vertiv IntelliSlot® Relay Card connected to a Raspberry Pi GPIO.
 
 Created as part of this YouTube Video, feedback and pull requests welcome.
-[https://youtu.be/_P4-Sfet08s](https://youtu.be/_P4-Sfet08s)
+
+[![Watch the video](https://img.youtube.com/vi/_P4-Sfet08s/hqdefault.jpg)](https://www.youtube.com/watch?v=_P4-Sfet08s)
+
+[Find out more on YeahNahDIY.com](https://yeahnahdiy.com/blog/adding-a-ups-to-my-home-network-with-custom-raspberry)
 
 The app provides:
 - A live SVG schematic showing UPS status (Mains, Inverter, Battery, Load).
