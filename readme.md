@@ -54,8 +54,7 @@ sudo apt upgrade
 2. **Install Python dependencies:**
 
 ```bash
-sudo apt install python3-pip
-pip3 install flask gpiozero requests
+sudo apt install python3-flask python3-gpiozero python3-requests
 ```
 
 3. **Clone this repository:**
@@ -82,7 +81,7 @@ Adjust GPIO pins in the script if needed.
 ## Running the App
 
 ```bash
-sudo python3 scripts/ups-monitor.py
+sudo python3 raspberry-pi-ups-monitor/ups-monitor.py
 ```
 
 Open in your browser:
@@ -110,7 +109,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/pi/
-ExecStart=/usr/bin/python3 scripts/ups-monitor.py
+ExecStart=/usr/bin/python3 raspberry-pi-ups-monitor/ups-monitor.py
 Restart=always
 User=root
 Environment=PYTHONUNBUFFERED=1
